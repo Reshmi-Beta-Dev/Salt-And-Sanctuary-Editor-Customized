@@ -65,12 +65,14 @@ public class WorldMapBaker
 				dev.SetRenderTarget(tiles[i, j]);
 				dev.Clear(new Color(num15, num15, num15, 1f));
 				SpriteTools.BeginAlpha();
-				Game1.map.Draw(11, 15, Game1.glowMgr, bloomTintEffect, 1f);
-				Game1.map.Draw(15, 16, Game1.glowMgr, bloomTintEffect, 1f);
-				Game1.map.Draw(16, 18, Game1.glowMgr, bloomTintEffect, 1f);
-				Game1.map.Draw(0, 5, Game1.glowMgr, bloomTintEffect, 1f);
-				Game1.map.Draw(5, 6, Game1.glowMgr, bloomTintEffect, 1f);
-				Game1.map.Draw(6, 10, Game1.glowMgr, bloomTintEffect, 1f);
+				if (!Game1.hideInactiveLayers) {
+					Game1.map.Draw(11, 15, Game1.glowMgr, bloomTintEffect, 1f);
+					Game1.map.Draw(15, 16, Game1.glowMgr, bloomTintEffect, 1f);
+					Game1.map.Draw(16, 18, Game1.glowMgr, bloomTintEffect, 1f);
+					Game1.map.Draw(0, 5, Game1.glowMgr, bloomTintEffect, 1f);
+					Game1.map.Draw(5, 6, Game1.glowMgr, bloomTintEffect, 1f);
+					Game1.map.Draw(6, 10, Game1.glowMgr, bloomTintEffect, 1f);
+				}
 				if (sepia)
 				{
 					SpriteTools.End();

@@ -996,7 +996,7 @@ public class Game1 : Game
 		return new Vector2(1280f, 720f) - new Vector2((float)mousePosition.X - pictureVec.X, (float)mousePosition.Y - pictureVec.Y);
 	}
 
-	private void UpdateKeys(bool inView) // TODO: Keyboard input
+	private void UpdateKeys(bool inView) 
 	{
 		KeyboardState state = Keyboard.GetState();
 		Microsoft.Xna.Framework.Input.Keys[] pressedKeys = state.GetPressedKeys();
@@ -1263,13 +1263,16 @@ public class Game1 : Game
 		SpriteTools.End();
 		Water.Draw();
 		SpriteTools.BeginAlpha();
-		if (indoors)
+		if (!hideInactiveLayers)
 		{
-			map.Draw(16, 19, glowMgr, bloomTintEffect, 1f);
-		}
-		else
-		{
-			map.Draw(6, 11, glowMgr, bloomTintEffect, 1f);
+			if (indoors)
+			{
+				map.Draw(16, 19, glowMgr, bloomTintEffect, 1f);
+			}
+			else
+			{
+				map.Draw(6, 11, glowMgr, bloomTintEffect, 1f);
+			}
 		}
 		SpriteTools.End();
 		SpriteTools.BeginAdditive();

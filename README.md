@@ -5,7 +5,9 @@ This is the Salt & Sanctuary Map Editor, created by Ska Studios. Jamezilla from 
 # Credits
 
 Original program by Ska Studios (https://ska-studios.com/)
+
 Recompiled by Zephyrus Greene (https://next.nexusmods.com/profile/ZephyrusGreene?gameId=2049)
+
 Further modified by me (https://github.com/BryTheGuy98)
 
 # New Features

@@ -1209,7 +1209,7 @@ public class Game1 : Game
 			{
 			}
 		}
-		if (hideInactiveLayers && selLayer > 0 && selLayer < 19)
+		if (hideInactiveLayers && selLayer >= 0 && selLayer < 19)
 		{
             map.Draw(selLayer, selLayer + 1, glowMgr, bloomTintEffect, 1f);
         }

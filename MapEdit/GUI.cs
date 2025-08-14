@@ -1400,44 +1400,8 @@ public class GUI : Form
 
     private void pctCells_DoubleClick(object sender, EventArgs e)
 	{
-		if (Game1.selLayer <= -1 || Game1.selLayer >= 20)
-		{
-			return;
-		}
-		Seg seg = new Seg();
-		seg.idx = Game1.selIdx;
-		seg.texture = Game1.selTex;
-		seg.loc = ScrollManager.scroll;
-		seg.scaling = new Vector2(1f, 1f);
-		if (Game1.flipMode)
-		{
-			seg.rotation = 3.141593f;
-		}
-		if (Game1.selLayer == 19)
-		{
-			seg.texture = MonsterCatalog.catalog[Game1.selIdx].name;
-		}
-		else
-		{
-			try
-			{
-				if (Game1.textures[seg.texture].type == 3)
-				{
-					seg.strFlag = Game1.textures[seg.texture].cell[Game1.selIdx].name;
-				}
-			}
-			catch
-			{
-				return;
-			}
-		}
-		Game1.map.layer[Game1.selLayer].seg.Add(seg);
-		Game1.map.mapGrid.needsUpdate = true;
-		PopulateMapCells();
-		if (Game1.selLayer == 19)
-		{
-			Game1.needsActorUpdate = true;
-		}
+        // Disabled: spawning handled on single-click now
+        return;
 	}
 
 	private void pctCells_MouseEnter(object sender, EventArgs e)
@@ -1856,7 +1820,45 @@ public class GUI : Form
 
 	private void pctCells_Click(object sender, EventArgs e)
 	{
-	}
+        if (Game1.selLayer <= -1 || Game1.selLayer >= 20)
+        {
+            return;
+        }
+        Seg seg = new Seg();
+        seg.idx = Game1.selIdx;
+        seg.texture = Game1.selTex;
+        seg.loc = ScrollManager.scroll;
+        seg.scaling = new Vector2(1f, 1f);
+        if (Game1.flipMode)
+        {
+            seg.rotation = 3.141593f;
+        }
+        if (Game1.selLayer == 19)
+        {
+            seg.texture = MonsterCatalog.catalog[Game1.selIdx].name;
+        }
+        else
+        {
+            try
+            {
+                if (Game1.textures[seg.texture].type == 3)
+                {
+                    seg.strFlag = Game1.textures[seg.texture].cell[Game1.selIdx].name;
+                }
+            }
+            catch
+            {
+                return;
+            }
+        }
+        Game1.map.layer[Game1.selLayer].seg.Add(seg);
+        Game1.map.mapGrid.needsUpdate = true;
+        PopulateMapCells();
+        if (Game1.selLayer == 19)
+        {
+            Game1.needsActorUpdate = true;
+        }
+    }
 
 	private void sendToBackToolStripMenuItem_Click(object sender, EventArgs e)
 	{

@@ -704,6 +704,15 @@ public class GUI : Form
 
 	private void mnuFileSave_Click(object sender, EventArgs e)
 	{
+		PerformSave();
+	}
+
+	internal void PerformSave()
+	{
+		if (string.IsNullOrEmpty(fullPath))
+		{
+			return;
+		}
 		Game1.map.Write(fullPath, Game1.textures);
 		string[] array = fullPath.Split('\\');
 		string text = array[array.Length - 1];

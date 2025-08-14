@@ -162,7 +162,8 @@ public class Game1 : Game
 
 	private Effect pmaEffect;
 
-	private KeyboardState oldKeyState;
+    private KeyboardState oldKeyState;
+    private static int ctrlClickCounter;
 
 	public static SpriteFont arial;
 
@@ -877,6 +878,20 @@ public class Game1 : Game
 			int num20 = selSeg;
 			if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20)
 			{
+				// Ctrl+Left-click counter for autosave
+				if (flag)
+				{
+					ctrlClickCounter++;
+					if (ctrlClickCounter >= 15)
+					{
+						try { Program.gui.PerformSave(); } catch {}
+						ctrlClickCounter = 0;
+					}
+				}
+				else
+				{
+					ctrlClickCounter = 0;
+				}
 				Layer layer = map.layer[selLayer];
 				for (int num21 = 0; num21 < layer.seg.Count; num21++)
 				{

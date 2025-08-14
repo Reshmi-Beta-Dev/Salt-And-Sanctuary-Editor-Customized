@@ -224,6 +224,31 @@ public class GUI : Form
 		return pctSurface.Handle;
 	}
 
+	internal void SwitchToLayerAndSheet(int layer, string texture)
+	{
+		try
+		{
+			if (layer >= 0 && layer < cmbLayer.Items.Count)
+			{
+				cmbLayer.SelectedIndex = layer;
+			}
+			if (!string.IsNullOrEmpty(texture))
+			{
+				for (int i = 0; i < lstSheets.Items.Count; i++)
+				{
+					if (lstSheets.Items[i].ToString() == texture)
+					{
+						lstSheets.SelectedIndex = i;
+						break;
+					}
+				}
+				UpdateCellTree();
+				try { trvCells.ExpandAll(); } catch {}
+			}
+		}
+		catch {}
+	}
+
 	public void Initialize()
 	{
 		PopulateSheets();
@@ -345,6 +370,8 @@ public class GUI : Form
 			Game1.selTex = (string)lstSheets.Items[lstSheets.SelectedIndex];
 			UpdateCellTree();
 			try { trvCells.ExpandAll(); } catch {}
+			// also auto-select the first node so palette draws immediately
+			try { if (trvCells.Nodes.Count > 0) trvCells.SelectedNode = trvCells.Nodes[0]; } catch {}
 			Game1.needsPaletteDraw = true;
 			lstCells.Items.Clear();
 			for (int i = 0; i < Game1.textures[Game1.selTex].cell.Length && Game1.textures[Game1.selTex].cell[i] != null; i++)

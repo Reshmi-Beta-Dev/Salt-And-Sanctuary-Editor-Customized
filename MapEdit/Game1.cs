@@ -1017,6 +1017,7 @@ public class Game1 : Game
 		Microsoft.Xna.Framework.Input.Keys[] pressedKeys = state.GetPressedKeys();
 		Microsoft.Xna.Framework.Input.Keys[] pressedKeys2 = oldKeyState.GetPressedKeys();
 		isShift = false;
+		bool ctrlDown = state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.LeftControl) || state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.RightControl);
 		for (int i = 0; i < pressedKeys.Length; i++)
 		{
 			bool flag = true;
@@ -1051,7 +1052,48 @@ public class Game1 : Game
 			}
 			Program.gui.PopulateMapCells();
 		}
+
+		// Ctrl+G: jump to hovered segment's sheet and layer
+		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
+		{
+			int hoveredSeg = GetHoveredSegIndex();
+			if (hoveredSeg > -1 && selLayer >= 0 && selLayer < 20)
+			{
+				Seg s = map.layer[selLayer].seg[hoveredSeg];
+				if (s != null && !string.IsNullOrEmpty(s.texture) && Game1.textures.ContainsKey(s.texture))
+				{
+					Program.gui.SwitchToLayerAndSheet(selLayer, s.texture);
+				}
+			}
+		}
 		oldKeyState = state;
+	}
+
+	private bool WasKeyJustPressed(Microsoft.Xna.Framework.Input.Keys[] now, Microsoft.Xna.Framework.Input.Keys[] before, Microsoft.Xna.Framework.Input.Keys key)
+	{
+		bool n = false, b = false;
+		for (int i = 0; i < now.Length; i++) if (now[i] == key) { n = true; break; }
+		for (int j = 0; j < before.Length; j++) if (before[j] == key) { b = true; break; }
+		return n && !b;
+	}
+
+	private int GetHoveredSegIndex()
+	{
+		if (selLayer < 0 || selLayer >= 20) return -1;
+		Layer layer = map.layer[selLayer];
+		Vector2 m = MVec();
+		for (int i = 0; i < layer.seg.Count; i++)
+		{
+			Seg seg = layer.seg[i];
+			if (seg == null) continue;
+			var rect = GetSegRect(seg, selLayer);
+			Vector2 rl = ScrollManager.GetRealLoc(m, seg.depth);
+			if ((double)rl.X > (double)rect.Left && (double)rl.Y > (double)rect.Top && (double)rl.X < (double)rect.Right && (double)rl.Y < (double)rect.Bottom)
+			{
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	public static void SwapSegs(int i, int j)

@@ -879,7 +879,7 @@ public class Game1 : Game
 			if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20)
 			{
 				// Ctrl+Left-click counter for autosave
-				if (flag)
+                if (flag)
 				{
 					ctrlClickCounter++;
 					if (ctrlClickCounter >= 15)
@@ -902,7 +902,7 @@ public class Game1 : Game
 						Vector2 realLoc5 = ScrollManager.GetRealLoc(vector, seg3.depth);
 						if ((double)realLoc5.X > (double)segRect.Left && (double)realLoc5.Y > (double)segRect.Top && (double)realLoc5.X < (double)segRect.Right && (double)realLoc5.Y < (double)segRect.Bottom)
 						{
-							selSeg = num21;
+                            if (!seg3.isLocked) selSeg = num21;
 						}
 					}
 				}
@@ -932,12 +932,12 @@ public class Game1 : Game
 					actorMgr.actor[num22].key = 0;
 				}
 			}
-			if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1 && selSeg < map.layer[selLayer].seg.Count)
+            if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1 && selSeg < map.layer[selLayer].seg.Count)
 			{
 				try
 				{
 					Seg seg5 = map.layer[selLayer].seg[selSeg];
-					if (seg5 != null && flag3)
+                    if (seg5 != null && flag3 && !seg5.isLocked)
 					{
 						Vector2 vector3 = vector - pmVec;
 						seg5.loc += vector3 / ScrollManager.GetSize(seg5.depth);
@@ -953,10 +953,10 @@ public class Game1 : Game
 				map.mapGrid.needsUpdate = true;
 				needsActorUpdate = true;
 			}
-			if (preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1)
+            if (preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1)
 			{
 				Seg seg6 = map.layer[selLayer].seg[selSeg];
-				if (seg6 != null && flag3)
+                if (seg6 != null && flag3 && !seg6.isLocked)
 				{
 					Vector2 vector4 = vector - pmVec;
 					if (selLayer == 19)
@@ -1053,6 +1053,16 @@ public class Game1 : Game
 			Program.gui.PopulateMapCells();
 		}
 
+		// Ctrl+U: toggle lock on hovered segment
+		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.U))
+		{
+			int hovered = GetHoveredSegIndex();
+			if (hovered > -1 && selLayer >= 0 && selLayer < 20)
+			{
+				map.layer[selLayer].seg[hovered].isLocked = !map.layer[selLayer].seg[hovered].isLocked;
+			}
+		}
+
 		// Ctrl+G: jump to hovered segment's sheet and layer
 		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
 		{
@@ -1094,6 +1104,22 @@ public class Game1 : Game
 			}
 		}
 		return -1;
+	}
+
+	public static void LockVisibleSegments()
+	{
+		if (selLayer < 0 || selLayer >= 20) return;
+		Layer layer = map.layer[selLayer];
+		for (int i = 0; i < layer.seg.Count; i++)
+		{
+			Seg s = layer.seg[i];
+			if (s == null) continue;
+			Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
+			if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
+			{
+				s.isLocked = true;
+			}
+		}
 	}
 
 	public static void SwapSegs(int i, int j)
@@ -1433,7 +1459,7 @@ public class Game1 : Game
 
 	private void DrawSelected()
 	{
-		if (mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.MiddleButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Released)
+            if (mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.MiddleButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Released)
 		{
 			int num = -1;
 			if (selLayer > -1 && selLayer < 20)
@@ -1448,7 +1474,7 @@ public class Game1 : Game
 						Vector2 realLoc = ScrollManager.GetRealLoc(MVec(), seg.depth);
 						if ((double)realLoc.X > (double)segRect.Left && (double)realLoc.Y > (double)segRect.Top && (double)realLoc.X < (double)segRect.Right && (double)realLoc.Y < (double)segRect.Bottom)
 						{
-							num = i;
+                                if (!seg.isLocked) num = i;
 						}
 					}
 				}

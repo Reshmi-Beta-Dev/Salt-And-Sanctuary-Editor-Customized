@@ -33,6 +33,8 @@ public class Seg
 
 	public float depth;
 
+		public bool isLocked;
+
 	internal void CopyFrom(Seg seg)
 	{
 		if (seg == null)

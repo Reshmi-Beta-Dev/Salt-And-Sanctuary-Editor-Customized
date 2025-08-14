@@ -741,6 +741,7 @@ public class GUI : Form
 		{
 			return;
 		}
+		try { Game1.LockVisibleSegments(); } catch {}
 		Game1.map.Write(fullPath, Game1.textures);
 		string[] array = fullPath.Split('\\');
 		string text = array[array.Length - 1];
@@ -1545,8 +1546,12 @@ public class GUI : Form
 		paletteScrolling = false;
 		if (e.Button == MouseButtons.Right && Game1.selLayer < 19 && Game1.selSeg >= 0 && Game1.selLayer >= 0)
 		{
-			Game1.map.layer[Game1.selLayer].seg[Game1.selSeg].idx = Game1.selIdx;
-			Game1.map.layer[Game1.selLayer].seg[Game1.selSeg].texture = Game1.selTex;
+			Seg target = Game1.map.layer[Game1.selLayer].seg[Game1.selSeg];
+			if (target != null && !target.isLocked)
+			{
+				target.idx = Game1.selIdx;
+				target.texture = Game1.selTex;
+			}
 		}
 	}
 
@@ -1877,6 +1882,10 @@ public class GUI : Form
             {
                 return;
             }
+        }
+        if (seg != null)
+        {
+            seg.isLocked = false;
         }
         Game1.map.layer[Game1.selLayer].seg.Add(seg);
         Game1.map.mapGrid.needsUpdate = true;

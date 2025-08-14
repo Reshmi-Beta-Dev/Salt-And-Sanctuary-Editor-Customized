@@ -344,6 +344,7 @@ public class GUI : Form
 			}
 			Game1.selTex = (string)lstSheets.Items[lstSheets.SelectedIndex];
 			UpdateCellTree();
+			try { trvCells.ExpandAll(); } catch {}
 			Game1.needsPaletteDraw = true;
 			lstCells.Items.Clear();
 			for (int i = 0; i < Game1.textures[Game1.selTex].cell.Length && Game1.textures[Game1.selTex].cell[i] != null; i++)

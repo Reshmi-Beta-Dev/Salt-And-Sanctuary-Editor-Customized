@@ -508,6 +508,7 @@ public class Game1 : Game
 				break;
 			}
 		}
+		// Don't reset counter when Ctrl is released - only reset after save
 		isCtrl = flag;
 		Game1.map.RefreshDepths();
 		if (recordSequenceMode)
@@ -876,7 +877,7 @@ public class Game1 : Game
 				break;
 			}
 			int num20 = selSeg;
-			if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20)
+						if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20)
 			{
 				// Ctrl+Left-click counter for autosave
                 if (flag)
@@ -888,10 +889,7 @@ public class Game1 : Game
 						ctrlClickCounter = 0;
 					}
 				}
-				else
-				{
-					ctrlClickCounter = 0;
-				}
+				// Only reset counter when Ctrl is not held (not on every left-click)
 				Layer layer = map.layer[selLayer];
 				for (int num21 = 0; num21 < layer.seg.Count; num21++)
 				{
@@ -1405,6 +1403,18 @@ public class Game1 : Game
 		SpriteTools.sprite.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend);
 		Vector2 realLoc = ScrollManager.GetRealLoc(MVec(), 1f);
 		SpriteTools.sprite.DrawString(arial, realLoc.ToString() + " " + (int)((double)realLoc.X / 64.0) + ", " + (int)((double)realLoc.Y / 32.0), new Vector2(50f, 670f), Microsoft.Xna.Framework.Color.White);
+		
+		// Draw autosave counter with better positioning and styling
+		if (arial != null)
+		{
+			string autosaveText = $"Clicks until autosave: {15 - ctrlClickCounter}";
+			// Position it below the coordinate display, with a slight offset for better readability
+			Vector2 autosavePos = new Vector2(50f, 690f);
+			// Use a slightly different color to distinguish it from coordinates but keep it visible
+			Microsoft.Xna.Framework.Color autosaveColor = new Microsoft.Xna.Framework.Color(0.9f, 0.9f, 1f, 1f);
+			SpriteTools.sprite.DrawString(arial, autosaveText, autosavePos, autosaveColor);
+		}
+		
 		if (recordSequenceMode)
 		{
 			SpriteTools.sprite.DrawString(arial, "REC", new Vector2(70f, 640f), Microsoft.Xna.Framework.Color.White);

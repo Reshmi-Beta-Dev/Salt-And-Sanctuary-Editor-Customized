@@ -242,12 +242,48 @@ public class GUI : Form
 						break;
 					}
 				}
+				
+				// Ensure the tree view is visible and properly positioned (like in cmbLayer_SelectedIndexChanged)
+				trvCells.Visible = true;
+				trvCells.Location = new System.Drawing.Point(txtRScript.Location.X, txtRScript.Location.Y);
+				trvCells.Size = new Size(txtRScript.Size.Width, txtRScript.Size.Height);
+				
+				// Update the tree for the new sheet
 				UpdateCellTree();
-				try { trvCells.ExpandAll(); } catch {}
+				
+				// Now expand all nodes in the tree view to show sub-folders
+				try 
+				{ 
+					// Force a refresh to ensure the tree is properly populated
+					trvCells.Refresh();
+					
+					// Expand all nodes
+					trvCells.ExpandAll(); 
+					
+					// Ensure the first node is visible
+					if (trvCells.Nodes.Count > 0)
+					{
+						trvCells.Nodes[0].EnsureVisible();
+					}
+					
+					// Also auto-select the first node so palette draws immediately (like in lstSheets_SelectedIndexChanged)
+					if (trvCells.Nodes.Count > 0)
+					{
+						trvCells.SelectedNode = trvCells.Nodes[0];
+					}
+				} 
+				catch {}
+				
+				// Set the palette to redraw
+				Game1.needsPaletteDraw = true;
 			}
 		}
 		catch {}
 	}
+	
+
+	
+
 
 	public void Initialize()
 	{
@@ -639,6 +675,7 @@ public class GUI : Form
 		if (name != null && texture != null && Game1.nodes.ContainsKey(texture))
 		{
 			TreeNode treeNode = Game1.nodes[texture].Clone() as TreeNode;
+			// We need to prune the tree to create the proper structure, but then expand it
 			PruneTree(treeNode);
 			treeNode.Text = name;
 			trvCells.Nodes.Add(treeNode);

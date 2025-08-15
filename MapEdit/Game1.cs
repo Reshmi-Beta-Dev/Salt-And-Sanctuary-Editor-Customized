@@ -951,41 +951,7 @@ public class Game1 : Game
 				map.mapGrid.needsUpdate = true;
 				needsActorUpdate = true;
 			}
-            if (preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1)
-			{
-				Seg seg6 = map.layer[selLayer].seg[selSeg];
-                if (seg6 != null && flag3 && !seg6.isLocked)
-				{
-					Vector2 vector4 = vector - pmVec;
-					if (selLayer == 19)
-					{
-						if ((double)vector4.Y > 0.0)
-						{
-							seg6.intFlag = 0;
-						}
-						else if ((double)vector4.Y < 0.0)
-						{
-							seg6.intFlag = 1;
-						}
-					}
-					else
-					{
-						if (flipMode)
-						{
-							vector4.Y *= -1f;
-						}
-						seg6.rotation += vector4.Y / 120f;
-						while ((double)seg6.rotation < 0.0)
-						{
-							seg6.rotation += 6.28f;
-						}
-						while ((double)seg6.rotation > 6.28000020980835)
-						{
-							seg6.rotation -= 6.28f;
-						}
-					}
-				}
-			}
+                         // Right-click rotation logic removed - now used for smart selection
 			if (Program.gui.IsPictureFocus())
 			{
 				UpdateKeys(flag3);
@@ -1054,23 +1020,23 @@ public class Game1 : Game
 		// Ctrl+U: toggle lock on hovered segment
 		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.U))
 		{
-			int hovered = GetHoveredSegIndex();
-			if (hovered > -1 && selLayer >= 0 && selLayer < 20)
+			int hLayer, hSeg;
+			if (TryGetHoveredSegment(out hLayer, out hSeg))
 			{
-				map.layer[selLayer].seg[hovered].isLocked = !map.layer[selLayer].seg[hovered].isLocked;
+				map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
 			}
 		}
 
-		// Ctrl+G: jump to hovered segment's sheet and layer
-		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
+		// Right-click: jump to hovered segment's sheet and layer (smart selection)
+		if (mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Released)
 		{
-			int hoveredSeg = GetHoveredSegIndex();
-			if (hoveredSeg > -1 && selLayer >= 0 && selLayer < 20)
+			int hLayer, hSeg;
+			if (TryGetHoveredSegment(out hLayer, out hSeg))
 			{
-				Seg s = map.layer[selLayer].seg[hoveredSeg];
+				Seg s = map.layer[hLayer].seg[hSeg];
 				if (s != null && !string.IsNullOrEmpty(s.texture) && Game1.textures.ContainsKey(s.texture))
 				{
-					Program.gui.SwitchToLayerAndSheet(selLayer, s.texture);
+					Program.gui.SwitchToLayerAndSheet(hLayer, s.texture);
 				}
 			}
 		}
@@ -1085,23 +1051,78 @@ public class Game1 : Game
 		return n && !b;
 	}
 
-	private int GetHoveredSegIndex()
+	private bool TryGetHoveredSegment(out int hoveredLayer, out int hoveredSeg)
 	{
-		if (selLayer < 0 || selLayer >= 20) return -1;
-		Layer layer = map.layer[selLayer];
+		hoveredLayer = -1;
+		hoveredSeg = -1;
 		Vector2 m = MVec();
-		for (int i = 0; i < layer.seg.Count; i++)
+		
+		// Prioritize layers based on current environment and visual depth
+		int[] priority = new int[20];
+		int priorityIndex = 0;
+		
+		// COMPLETELY IGNORE current layer - only search other layers
+		// Add foreground layers first (higher layer numbers = more foreground)
+		if (indoors)
 		{
-			Seg seg = layer.seg[i];
-			if (seg == null) continue;
-			var rect = GetSegRect(seg, selLayer);
-			Vector2 rl = ScrollManager.GetRealLoc(m, seg.depth);
-			if ((double)rl.X > (double)rect.Left && (double)rl.Y > (double)rect.Top && (double)rl.X < (double)rect.Right && (double)rl.Y < (double)rect.Bottom)
+			// Inside: prioritize layers 18, 17, 16 (foreground) over 11, 12, 13, 14, 15 (background)
+			for (int l = 18; l >= 11; l--)
 			{
-				return i;
+				if (l != selLayer) // Only exclude current layer, not neighbors
+				{
+					priority[priorityIndex++] = l;
+				}
 			}
 		}
-		return -1;
+		else
+		{
+			// Outside: prioritize layers 10, 9, 8 (foreground) over 0, 1, 2, 3, 4, 5 (background)
+			for (int l = 10; l >= 0; l--)
+			{
+				if (l != selLayer) // Only exclude current layer, not neighbors
+				{
+					priority[priorityIndex++] = l;
+				}
+			}
+		}
+		
+		// Search through prioritized layers
+		for (int p = 0; p < priorityIndex; p++)
+		{
+			int l = priority[p];
+			if (l < 0 || l >= 20) continue;
+			if (!IsLayerInCurrentEnvironment(l)) continue;
+			
+			Layer layerData = map.layer[l];
+			// Iterate segments backwards to prioritize visually recent/top entries
+			for (int i = layerData.seg.Count - 1; i >= 0; i--)
+			{
+				Seg s = layerData.seg[i];
+				if (s == null) continue;
+				var rect = GetSegRect(s, l);
+				Vector2 rl = ScrollManager.GetRealLoc(m, s.depth);
+				if ((double)rl.X > (double)rect.Left && (double)rl.Y > (double)rect.Top && (double)rl.X < (double)rect.Right && (double)rl.Y < (double)rect.Bottom)
+				{
+					hoveredLayer = l;
+					hoveredSeg = i;
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	
+	private bool IsLayerInCurrentEnvironment(int l)
+	{
+		// Outside art layers: 0..10, Inside art layers: 11..18
+		if (indoors)
+		{
+			return l >= 11 && l <= 18;
+		}
+		else
+		{
+			return l >= 0 && l <= 10;
+		}
 	}
 
 	public static void LockVisibleSegments()
@@ -1801,3 +1822,4 @@ public class Game1 : Game
 		}
 	}
 }
+

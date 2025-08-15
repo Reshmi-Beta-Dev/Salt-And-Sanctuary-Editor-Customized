@@ -1027,8 +1027,8 @@ public class Game1 : Game
 			}
 		}
 
-		// Right-click: jump to hovered segment's sheet and layer (smart selection)
-		if (mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Released)
+		// Ctrl+/: jump to hovered segment's sheet and layer (smart selection)
+		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.OemQuestion))
 		{
 			int hLayer, hSeg;
 			if (TryGetHoveredSegment(out hLayer, out hSeg))

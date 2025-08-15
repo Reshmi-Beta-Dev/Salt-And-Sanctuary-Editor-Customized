@@ -1066,11 +1066,11 @@ public class Game1 : Game
 					selSeg = -1;
 				}
 			}
-			// If no object is selected, lock/unlock the hovered object
+			// If no object is selected, lock/unlock the hovered object (include current layer)
 			else
 			{
 				int hLayer, hSeg;
-				if (TryGetHoveredSegment(out hLayer, out hSeg))
+				if (TryGetHoveredSegment(out hLayer, out hSeg, true)) // Include current layer for Space key
 				{
 					map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
 				}
@@ -1139,7 +1139,7 @@ public class Game1 : Game
 		return n && !b;
 	}
 
-	private bool TryGetHoveredSegment(out int hoveredLayer, out int hoveredSeg)
+	private bool TryGetHoveredSegment(out int hoveredLayer, out int hoveredSeg, bool includeCurrentLayer = false)
 	{
 		hoveredLayer = -1;
 		hoveredSeg = -1;
@@ -1149,14 +1149,14 @@ public class Game1 : Game
 		int[] priority = new int[20];
 		int priorityIndex = 0;
 		
-		// COMPLETELY IGNORE current layer - only search other layers
-		// Add foreground layers first (higher layer numbers = more foreground)
+		// For smart selection (Ctrl+/), ignore current layer
+		// For Space key locking/unlocking, include current layer
 		if (indoors)
 		{
 			// Inside: prioritize layers 18, 17, 16 (foreground) over 11, 12, 13, 14, 15 (background)
 			for (int l = 18; l >= 11; l--)
 			{
-				if (l != selLayer) // Only exclude current layer, not neighbors
+				if (includeCurrentLayer || l != selLayer) // Include current layer if requested
 				{
 					priority[priorityIndex++] = l;
 				}
@@ -1167,7 +1167,7 @@ public class Game1 : Game
 			// Outside: prioritize layers 10, 9, 8 (foreground) over 0, 1, 2, 3, 4, 5 (background)
 			for (int l = 10; l >= 0; l--)
 			{
-				if (l != selLayer) // Only exclude current layer, not neighbors
+				if (includeCurrentLayer || l != selLayer) // Include current layer if requested
 				{
 					priority[priorityIndex++] = l;
 				}

@@ -1213,21 +1213,7 @@ public class Game1 : Game
 		}
 	}
 
-	public static void LockVisibleSegments()
-	{
-		if (selLayer < 0 || selLayer >= 20) return;
-		Layer layer = map.layer[selLayer];
-		for (int i = 0; i < layer.seg.Count; i++)
-		{
-			Seg s = layer.seg[i];
-			if (s == null) continue;
-			Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
-			if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
-			{
-				s.isLocked = true;
-			}
-		}
-	}
+
 
 	public static void SwapSegs(int i, int j)
 	{

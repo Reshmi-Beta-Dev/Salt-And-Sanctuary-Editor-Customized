@@ -778,7 +778,7 @@ public class GUI : Form
 		{
 			return;
 		}
-		try { Game1.LockVisibleSegments(); } catch {}
+
 		Game1.map.Write(fullPath, Game1.textures);
 		string[] array = fullPath.Split('\\');
 		string text = array[array.Length - 1];

@@ -951,7 +951,43 @@ public class Game1 : Game
 				map.mapGrid.needsUpdate = true;
 				needsActorUpdate = true;
 			}
-                         // Right-click rotation logic removed - now used for smart selection
+			// Right-click rotation for selected segment (original system)
+			if (preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1)
+			{
+				Seg seg6 = map.layer[selLayer].seg[selSeg];
+				if (seg6 != null && flag3 && !seg6.isLocked)
+				{
+					Vector2 vector4 = vector - pmVec;
+					if (selLayer == 19)
+					{
+						if ((double)vector4.Y > 0.0)
+						{
+							seg6.intFlag = 0;
+						}
+						else if ((double)vector4.Y < 0.0)
+						{
+							seg6.intFlag = 1;
+						}
+					}
+					else
+					{
+						if (flipMode)
+						{
+							vector4.Y *= -1f;
+						}
+						seg6.rotation += vector4.Y / 120f;
+						while ((double)seg6.rotation < 0.0)
+						{
+							seg6.rotation += 6.28f;
+						}
+						while ((double)seg6.rotation > 6.28000020980835)
+						{
+							seg6.rotation -= 6.28f;
+						}
+					}
+				}
+			}
+			
 			if (Program.gui.IsPictureFocus())
 			{
 				UpdateKeys(flag3);

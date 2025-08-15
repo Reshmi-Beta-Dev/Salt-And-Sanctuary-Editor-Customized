@@ -1016,15 +1016,14 @@ public class Game1 : Game
 		KeyboardState state = Keyboard.GetState();
 		Microsoft.Xna.Framework.Input.Keys[] pressedKeys = state.GetPressedKeys();
 		Microsoft.Xna.Framework.Input.Keys[] pressedKeys2 = oldKeyState.GetPressedKeys();
-		isShift = false;
+		
+		// Fix Shift key detection - check both left and right shift
+		isShift = state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.LeftShift) || state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.RightShift);
 		bool ctrlDown = state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.LeftControl) || state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.RightControl);
+		
 		for (int i = 0; i < pressedKeys.Length; i++)
 		{
 			bool flag = true;
-			if (pressedKeys[i] == Microsoft.Xna.Framework.Input.Keys.LeftShift)
-			{
-				isShift = true;
-			}
 			for (int j = 0; j < pressedKeys2.Length; j++)
 			{
 				if (pressedKeys[i] == pressedKeys2[j])
@@ -1053,13 +1052,66 @@ public class Game1 : Game
 			Program.gui.PopulateMapCells();
 		}
 
-		// Ctrl+U: toggle lock on hovered segment
-		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.U))
+		// Space: toggle lock on selected or hovered segment
+		if (WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Space))
 		{
-			int hLayer, hSeg;
-			if (TryGetHoveredSegment(out hLayer, out hSeg))
+			// If an object is selected, lock it but keep the layer selected for spawning
+			if (selLayer > -1 && selLayer < 20 && selSeg > -1)
 			{
-				map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
+				Seg selectedSeg = map.layer[selLayer].seg[selSeg];
+				if (selectedSeg != null)
+				{
+					selectedSeg.isLocked = !selectedSeg.isLocked;
+					// Only deselect the specific segment, keep the layer selected
+					selSeg = -1;
+				}
+			}
+			// If no object is selected, lock/unlock the hovered object
+			else
+			{
+				int hLayer, hSeg;
+				if (TryGetHoveredSegment(out hLayer, out hSeg))
+				{
+					map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
+				}
+			}
+		}
+
+		// Shift+Up Arrow: unlock all visible segments (all layers)
+		if (isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Up))
+		{
+			for (int l = 0; l < 20; l++)
+			{
+				Layer layer = map.layer[l];
+				for (int i = 0; i < layer.seg.Count; i++)
+				{
+					Seg s = layer.seg[i];
+					if (s == null) continue;
+					Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
+					if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
+					{
+						s.isLocked = false; // Unlock all visible segments
+					}
+				}
+			}
+		}
+
+		// Shift+Down Arrow: lock all visible segments (all layers)
+		if (isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Down))
+		{
+			for (int l = 0; l < 20; l++)
+			{
+				Layer layer = map.layer[l];
+				for (int i = 0; i < layer.seg.Count; i++)
+				{
+					Seg s = layer.seg[i];
+					if (s == null) continue;
+					Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
+					if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
+					{
+						s.isLocked = true; // Lock all visible segments
+					}
+				}
 			}
 		}
 
@@ -1442,6 +1494,32 @@ public class Game1 : Game
 		SpriteTools.BeginAlpha();
 		DrawRectangle(new Microsoft.Xna.Framework.Rectangle(0, 0, map.xUnits * 64, (int)((double)(map.yUnits * 64) * 0.5)), selected: false, 2);
 		DrawSelected();
+		
+		// Draw lock indicators over locked segments
+		if (iconsTex != null)
+		{
+			for (int l = 0; l < 20; l++)
+			{
+				Layer layer = map.layer[l];
+				for (int i = 0; i < layer.seg.Count; i++)
+				{
+					Seg s = layer.seg[i];
+					if (s != null && s.isLocked)
+					{
+						Vector2 screenPos = ScrollManager.GetScreenLoc(s.loc, s.depth);
+						if (screenPos.X > -50 && screenPos.X < ScrollManager.screenSize.X + 50 && 
+							screenPos.Y > -50 && screenPos.Y < ScrollManager.screenSize.Y + 50)
+						{
+							// Draw a small lock icon above the locked segment
+							Vector2 lockPos = new Vector2(screenPos.X - 8, screenPos.Y - 20);
+							Microsoft.Xna.Framework.Color lockColor = new Microsoft.Xna.Framework.Color(1f, 0.5f, 0.5f, 0.8f); // Semi-transparent red
+							SpriteTools.sprite.Draw(iconsTex, lockPos, new Microsoft.Xna.Framework.Rectangle(0, 0, 16, 16), lockColor, 0f, Vector2.Zero, 0.8f, SpriteEffects.None, 1f);
+						}
+					}
+				}
+			}
+		}
+		
 		DrawCol();
 		DrawPreview();
 		if (showBloomTextures)
@@ -1470,6 +1548,29 @@ public class Game1 : Game
 			// Use a slightly different color to distinguish it from coordinates but keep it visible
 			Microsoft.Xna.Framework.Color autosaveColor = new Microsoft.Xna.Framework.Color(0.9f, 0.9f, 1f, 1f);
 			SpriteTools.sprite.DrawString(arial, autosaveText, autosavePos, autosaveColor);
+			
+			// Draw locked assets indicator
+			int lockedCount = 0;
+			for (int l = 0; l < 20; l++)
+			{
+				Layer layer = map.layer[l];
+				for (int i = 0; i < layer.seg.Count; i++)
+				{
+					Seg s = layer.seg[i];
+					if (s != null && s.isLocked)
+					{
+						lockedCount++;
+					}
+				}
+			}
+			
+			if (lockedCount > 0)
+			{
+				string lockedText = $"Locked assets: {lockedCount}";
+				Vector2 lockedPos = new Vector2(50f, 710f);
+				Microsoft.Xna.Framework.Color lockedColor = new Microsoft.Xna.Framework.Color(1f, 0.8f, 0.8f, 1f); // Light red
+				SpriteTools.sprite.DrawString(arial, lockedText, lockedPos, lockedColor);
+			}
 		}
 		
 		if (recordSequenceMode)

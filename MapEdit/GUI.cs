@@ -346,6 +346,32 @@ public class GUI : Form
 		Game1.drawLight = true;
 		drawLightToolStripMenuItem.Checked = true;
 		showBossBoundsToolStripMenuItem.Checked = true;
+		// Make console smaller and fit sheets list to show all items
+		try { FitSheetsListNoScroll(); this.Resize += GUI_Resize; } catch {}
+	}
+
+	private void GUI_Resize(object sender, EventArgs e)
+	{
+		FitSheetsListNoScroll();
+	}
+
+	private void FitSheetsListNoScroll()
+	{
+		try
+		{
+			// Size sheets to fit items (no scroll), up to available space
+			int padding = 6;
+			int targetH = lstSheets.ItemHeight * Math.Max(1, lstSheets.Items.Count) + padding;
+			lstSheets.Height = targetH;
+			// Place cells panel below the list
+			pnlCells.Top = lstSheets.Bottom + 12;
+			// Console takes remaining space
+			txtConsole.Top = pnlCells.Bottom + 12;
+			int remaining = this.ClientSize.Height - txtConsole.Top - 12;
+			if (remaining < 24) remaining = 24;
+			txtConsole.Height = remaining;
+		}
+		catch { }
 	}
 
 	private void pctSurface_MouseWheel(object sender, MouseEventArgs e)
@@ -396,6 +422,8 @@ public class GUI : Form
 		// Add Prefabs sheet entry (UI toggle for prefabMode) – always keep at top
 		if (lstSheets.Items.Contains("Prefabs")) lstSheets.Items.Remove("Prefabs");
 		lstSheets.Items.Insert(0, "Prefabs");
+		// Resize sheets list to fit all items without scroll
+		FitSheetsListNoScroll();
 	}
 
 	private void lstSheets_SelectedIndexChanged(object sender, EventArgs e)

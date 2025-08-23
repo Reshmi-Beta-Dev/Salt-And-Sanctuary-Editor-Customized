@@ -2248,49 +2248,38 @@ public class Game1 : Game
 	private static void MoveActiveGroupInLayer(bool toTop)
 	{
 		if (!glueActive) return;
-		// Build per-layer lists including parent first then children on same layer
-		Dictionary<int, List<int>> layerToIndices = new Dictionary<int, List<int>>();
-		Action<int,int> addIdx = (layer, idx) =>
+		// Build per-layer lists of segment references for the group
+		Dictionary<int, List<Seg>> layerToSegs = new Dictionary<int, List<Seg>>();
+		Action<int,int> addRef = (layerIdx, segIdx) =>
 		{
-			if (!layerToIndices.ContainsKey(layer)) layerToIndices[layer] = new List<int>();
-			if (!layerToIndices[layer].Contains(idx)) layerToIndices[layer].Add(idx);
+			if (layerIdx < 0 || layerIdx >= map.layer.Length) return;
+			Layer l = map.layer[layerIdx];
+			if (segIdx < 0 || segIdx >= l.seg.Count) return;
+			if (!layerToSegs.ContainsKey(layerIdx)) layerToSegs[layerIdx] = new List<Seg>();
+			Seg s = l.seg[segIdx];
+			if (s != null && !layerToSegs[layerIdx].Contains(s)) layerToSegs[layerIdx].Add(s);
 		};
-		addIdx(glueParent.layerIndex, glueParent.segIndex);
-		for (int i = 0; i < gluedChildren.Count; i++)
-		{
-			addIdx(gluedChildren[i].member.layerIndex, gluedChildren[i].member.segIndex);
-		}
+		addRef(glueParent.layerIndex, glueParent.segIndex);
+		for (int i = 0; i < gluedChildren.Count; i++) addRef(gluedChildren[i].member.layerIndex, gluedChildren[i].member.segIndex);
 
-		foreach (var kv in layerToIndices)
+		foreach (var kv in layerToSegs)
 		{
-			int layer = kv.Key;
-			List<int> indices = kv.Value.OrderBy(i => i).ToList(); // preserve relative order
-			Layer l = map.layer[layer];
+			int layerIdx = kv.Key;
+			Layer l = map.layer[layerIdx];
+			List<Seg> block = kv.Value; // current order
+			// Remove all block segs from the layer first
+			for (int i = l.seg.Count - 1; i >= 0; i--)
+			{
+				if (block.Contains(l.seg[i])) l.seg.RemoveAt(i);
+			}
+			// Reinsert as a block at top or bottom preserving internal order
 			if (toTop)
 			{
-				// Move each index towards the end, preserving relative order
-				for (int i = indices.Count - 1; i >= 0; i--)
-				{
-					int idx = indices[i];
-					if (idx < 0 || idx >= l.seg.Count) continue;
-					Seg temp = l.seg[idx];
-					l.seg.RemoveAt(idx);
-					l.seg.Add(temp);
-				}
+				for (int i = 0; i < block.Count; i++) l.seg.Add(block[i]);
 			}
 			else
 			{
-				// Move each index towards the start, preserving relative order
-				int insertAt = 0;
-				for (int i = 0; i < indices.Count; i++)
-				{
-					int idx = indices[i];
-					if (idx < 0 || idx >= l.seg.Count) continue;
-					Seg temp = l.seg[idx];
-					l.seg.RemoveAt(idx);
-					l.seg.Insert(insertAt, temp);
-					insertAt++;
-				}
+				for (int i = block.Count - 1; i >= 0; i--) l.seg.Insert(0, block[i]);
 			}
 		}
 		map.sequenceMgr.UpdateAffectedSegs();

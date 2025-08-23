@@ -226,6 +226,19 @@ public class Game1 : Game
 	// Prefab mode: gate glue/parenting behaviors to Prefabs only
 	public static bool prefabMode;
 
+	// Helper for prefab spawn block insertion without ValueTuple
+	private class PrefabSpawnEntry
+	{
+		public bool isParent;
+		public int order;
+		public Seg seg;
+		public float offX;
+		public float offY;
+		public float rot;
+		public float srx;
+		public float sry;
+	}
+
 	public Game1(IntPtr drawSurface)
 	{
 		graphics = new GraphicsDeviceManager(this);
@@ -2378,9 +2391,41 @@ public class Game1 : Game
 		if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 		string name = $"prefab-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
 		string path = Path.Combine(dir, name + ".json");
+		// Compute per-layer internal order (relative ordering within the group only)
+		var layerToMembers = new Dictionary<int, List<PrefabSpawnEntry>>();
+		// Add parent
+		if (!layerToMembers.ContainsKey(glueParent.layerIndex)) layerToMembers[glueParent.layerIndex] = new List<PrefabSpawnEntry>();
+		layerToMembers[glueParent.layerIndex].Add(new PrefabSpawnEntry { isParent = true, order = 0, seg = parent, offX = 0f, offY = 0f, rot = 0f, srx = 1f, sry = 1f });
+		// Add children
+		for (int i = 0; i < gluedChildren.Count; i++)
+		{
+			var r = gluedChildren[i].member;
+			if (!layerToMembers.ContainsKey(r.layerIndex)) layerToMembers[r.layerIndex] = new List<PrefabSpawnEntry>();
+			layerToMembers[r.layerIndex].Add(new PrefabSpawnEntry { isParent = false, order = i + 1, seg = map.layer[r.layerIndex].seg[r.segIndex], offX = 0f, offY = 0f, rot = 0f, srx = 1f, sry = 1f });
+		}
+		// Build order maps per layer (rank by original seg index)
+		var parentOrderMap = new Dictionary<int, int>(); // layer -> order
+		var childOrderMap = new Dictionary<string, int>(); // key: layer|seg
+		foreach (var kv in layerToMembers)
+		{
+			int layer = kv.Key;
+			var list = kv.Value.OrderBy(t => t.order).ToList();
+			for (int rank = 0; rank < list.Count; rank++)
+			{
+				var item = list[rank];
+				if (item.isParent)
+				{
+					parentOrderMap[layer] = rank;
+				}
+				else
+				{
+					childOrderMap[layer.ToString() + "|" + item.seg.idx.ToString()] = rank;
+				}
+			}
+		}
 		var sb = new System.Text.StringBuilder();
 		sb.Append("{\n");
-		sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "  \"parent\": {{ \"texture\": \"{0}\", \"idx\": {1}, \"scaleX\": {2}, \"scaleY\": {3}, \"rotation\": {4}, \"layer\": {5} }},\n", parent.texture ?? "", parent.idx, parent.scaling.X, parent.scaling.Y, parent.rotation, glueParent.layerIndex);
+		sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "  \"parent\": {{ \"texture\": \"{0}\", \"idx\": {1}, \"scaleX\": {2}, \"scaleY\": {3}, \"rotation\": {4}, \"layer\": {5}, \"order\": {6} }},\n", parent.texture ?? "", parent.idx, parent.scaling.X, parent.scaling.Y, parent.rotation, glueParent.layerIndex, parentOrderMap.ContainsKey(glueParent.layerIndex) ? parentOrderMap[glueParent.layerIndex] : 0);
 		sb.Append("  \"members\": [\n");
 		for (int i = 0; i < gluedChildren.Count; i++)
 		{
@@ -2395,15 +2440,79 @@ public class Game1 : Game
 			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"texture\": \"{0}\", \"idx\": {1}, \"layer\": {2}, ", child.texture ?? "", child.idx, r.layerIndex);
 			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"localOffsetX\": {0}, \"localOffsetY\": {1}, ", gc.localOffset.X, gc.localOffset.Y);
 			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"localRotation\": {0}, ", gc.localRotation);
-			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"scaleRatioX\": {0}, \"scaleRatioY\": {1}", gc.scaleRatio.X, gc.scaleRatio.Y);
+			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"scaleRatioX\": {0}, \"scaleRatioY\": {1}, ", gc.scaleRatio.X, gc.scaleRatio.Y);
+			int cOrder = 0; childOrderMap.TryGetValue(r.layerIndex.ToString() + "|" + r.segIndex.ToString(), out cOrder);
+			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"order\": {0}", cOrder);
 			sb.Append(" }");
 			if (i < gluedChildren.Count - 1) sb.Append(",");
 			sb.Append("\n");
 		}
 		sb.Append("  ]\n}");
 		File.WriteAllText(path, sb.ToString());
-		// PNG thumbnail generation intentionally omitted per requirements
-	}
+		// Generate a thumbnail by drawing the group to a small render target and saving to PNG
+		try
+		{
+			int tw = 112, th = 112;
+			var gd = SpriteTools.sprite.GraphicsDevice;
+			var rt = new Microsoft.Xna.Framework.Graphics.RenderTarget2D(gd, tw, th);
+			gd.SetRenderTarget(rt);
+			gd.Clear(Microsoft.Xna.Framework.Color.Transparent);
+			SpriteTools.BeginAlpha();
+			// Draw parent and children rough thumbnails centered
+			Vector2 center = new Vector2(tw / 2f, th / 2f);
+			Action<Seg, Microsoft.Xna.Framework.Color> drawSeg = (s, col) =>
+			{
+				try
+				{
+					var tex = textures[s.texture];
+					var cell = tex.cell[s.idx];
+					float scale = 0.2f; // rough scale for thumbnail
+					SpriteTools.sprite.Draw(tex.texture, center, cell.srcRect, col, s.rotation, cell.origin - new Vector2(cell.srcRect.X, cell.srcRect.Y), new Vector2(scale, scale), SpriteEffects.None, 1f);
+				}
+				catch { }
+			};
+			// Local copies
+			Seg pCopy = new Seg(); pCopy.CopyFrom(parent); pCopy.loc = center;
+			drawSeg(pCopy, Microsoft.Xna.Framework.Color.White);
+			for (int i = 0; i < gluedChildren.Count; i++)
+			{
+				var gc = gluedChildren[i];
+				Seg c = new Seg();
+				int layerIdx = gc.member.layerIndex; int segIdx = gc.member.segIndex;
+				try { c.CopyFrom(map.layer[layerIdx].seg[segIdx]); } catch { continue; }
+				// compute thumbnail-space loc using saved offsets
+				float px = (float)Math.Cos(parent.rotation); float py = (float)Math.Sin(parent.rotation);
+				float qx = (float)Math.Cos(parent.rotation + 1.57079637f); float qy = (float)Math.Sin(parent.rotation + 1.57079637f);
+				Vector2 worldOffset = new Vector2(gc.localOffset.X * parent.scaling.X, gc.localOffset.Y * parent.scaling.Y);
+				Vector2 thumbnailOffset = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy) * 0.2f;
+				c.loc = center + thumbnailOffset;
+				drawSeg(c, new Microsoft.Xna.Framework.Color(1f, 1f, 1f, 0.9f));
+			}
+			SpriteTools.End();
+			gd.SetRenderTarget(null);
+			// Save PNG
+			string pngPath = Path.Combine(dir, name + ".png");
+			using (var fs = File.Open(pngPath, FileMode.Create, FileAccess.Write))
+			{
+				rt.SaveAsPng(fs, tw, th);
+			}
+			rt.Dispose();
+			// If Prefabs sheet is selected, refresh it
+			if (Program.gui != null && prefabMode)
+			{
+				Program.gui.Invoke(new Action(() =>
+				{
+					try { Program.gui.GetType().GetMethod("RenderPrefabsPalette", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(Program.gui, null); } catch {}
+				}));
+			}
+		}
+		catch { }
+		// After save, unglue all groups in the editor
+		UnglueAll();
+		// Clear selection by default (leave objects in place)
+ 		selSeg = -1;
+ 		try { Program.gui.UpdateSelSeg(); } catch { }
+ 	}
 
 	public static void SpawnPrefabFromJson(string jsonPath)
 	{
@@ -2424,6 +2533,7 @@ public class Game1 : Game
 			float pScaleY = ExtractFloat(pBlock, "\"scaleY\"");
 			float pRot = ExtractFloat(pBlock, "\"rotation\"");
 			int pLayerSaved = ExtractInt(pBlock, "\"layer\"");
+			int pOrder = ExtractInt(pBlock, "\"order\"");
 			// Members array
 			int membersIdx = txt.IndexOf("\"members\"");
 			if (membersIdx < 0) return;

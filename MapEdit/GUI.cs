@@ -215,6 +215,9 @@ public class GUI : Form
 	public static extern bool LockWindowUpdate(IntPtr hWndLock);
 
 	private List<string> prefabThumbPaths = new List<string>();
+	private const int PrefabColumns = 5;
+	private const int PrefabCellW = 56;
+	private const int PrefabCellH = 56;
 
 	public GUI()
 	{
@@ -471,28 +474,61 @@ public class GUI : Form
 		{
 			pnlCells.Visible = true;
 			pctCells.Visible = true;
-			pctCells.Image = new Bitmap(280, 56);
+			pctCells.Image = new Bitmap(280, 56, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
 			pctCells.Size = new Size(280, 56);
 			return;
 		}
-		// List JSON prefab names as text entries
+		// Build list of prefab base names from JSON files
 		string[] jsons = Directory.GetFiles(dir, "*.json");
-		prefabThumbPaths.AddRange(jsons);
-		int cellW = 280, cellH = 24;
-		int rows = Math.Max(1, jsons.Length);
-		int bmpW = cellW;
+		List<string> names = jsons.Select(p => Path.GetFileNameWithoutExtension(p)).ToList();
+		// Grid settings: like other sheets (56x56 cells, 5 columns)
+		int columns = PrefabColumns;
+		int cellW = PrefabCellW, cellH = PrefabCellH;
+		int rows = Math.Max(1, (names.Count + columns - 1) / columns);
+		int bmpW = columns * cellW;
 		int bmpH = rows * cellH;
-		Bitmap bmp = new Bitmap(bmpW, bmpH);
+		Bitmap bmp = new Bitmap(bmpW, bmpH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
 		using (Graphics g = Graphics.FromImage(bmp))
 		{
-			g.Clear(System.Drawing.Color.FromArgb(50, 50, 50));
-			for (int i = 0; i < jsons.Length; i++)
+			// Use solid black background per request
+			g.Clear(System.Drawing.Color.Black);
+			for (int i = 0; i < names.Count; i++)
 			{
-				string file = Path.GetFileNameWithoutExtension(jsons[i]);
-				var rect = new System.Drawing.Rectangle(0, i * cellH, cellW, cellH);
-				using (var brush = new SolidBrush(System.Drawing.Color.FromArgb(70, 70, 70))) g.FillRectangle(brush, rect);
-				g.DrawString(file, new System.Drawing.Font("Arial", 10f, System.Drawing.FontStyle.Regular), System.Drawing.Brushes.White, new System.Drawing.PointF(6, rect.Y + 4));
-				using (var pen = new Pen(System.Drawing.Color.FromArgb(80, 255, 255, 255))) g.DrawRectangle(pen, rect);
+				int r = i / columns;
+				int c = i % columns;
+				var rect = new System.Drawing.Rectangle(c * cellW, r * cellH, cellW, cellH);
+				// Map this cell to its JSON path for click handling
+				prefabThumbPaths.Add(Path.Combine(dir, names[i] + ".json"));
+				string pngPath = Path.Combine(dir, names[i] + ".png");
+				bool drawn = false;
+				if (File.Exists(pngPath))
+				{
+					try
+					{
+						using (var img = Image.FromFile(pngPath))
+						{
+							int w = img.Width, h = img.Height;
+							double scale = Math.Min((double)cellW / w, (double)cellH / h);
+							int dw = Math.Max(1, (int)(w * scale));
+							int dh = Math.Max(1, (int)(h * scale));
+							int dx = rect.X + (cellW - dw) / 2;
+							int dy = rect.Y + (cellH - dh) / 2;
+							g.DrawImage(img, new System.Drawing.Rectangle(dx, dy, dw, dh));
+							drawn = true;
+						}
+					}
+					catch { drawn = false; }
+				}
+				if (!drawn)
+				{
+					// Draw subtle placeholder label only (no dark fill)
+					string label = names[i];
+					using (var f = new System.Drawing.Font("Arial", 7.5f, System.Drawing.FontStyle.Regular))
+					{
+						g.DrawString(label, f, System.Drawing.Brushes.Gray, new System.Drawing.RectangleF(rect.X + 2, rect.Y + 20, rect.Width - 4, rect.Height - 22));
+					}
+				}
+				using (var pen = new Pen(System.Drawing.Color.FromArgb(60, 200, 200, 200))) g.DrawRectangle(pen, rect);
 			}
 		}
 		pnlCells.Visible = true;
@@ -1984,12 +2020,14 @@ public class GUI : Form
 	{
 		if (Game1.prefabMode)
 		{
-			// Spawn prefab from clicked row
+			// Spawn prefab from clicked grid cell
 			System.Drawing.Point mouse = pctCells.PointToClient(Cursor.Position);
-			int row = mouse.Y / 24; // matches cellH in RenderPrefabsPalette
-			if (row >= 0 && row < prefabThumbPaths.Count)
+			int col = Math.Max(0, Math.Min(mouse.X / PrefabCellW, PrefabColumns - 1));
+			int row = Math.Max(0, mouse.Y / PrefabCellH);
+			int index = row * PrefabColumns + col;
+			if (index >= 0 && index < prefabThumbPaths.Count)
 			{
-				try { MapEdit.Game1.SpawnPrefabFromJson(prefabThumbPaths[row]); Program.gui.ConsoleWriteLine("Spawned prefab: " + System.IO.Path.GetFileNameWithoutExtension(prefabThumbPaths[row])); } catch {}
+				try { MapEdit.Game1.SpawnPrefabFromJson(prefabThumbPaths[index]); Program.gui.ConsoleWriteLine("Spawned prefab: " + System.IO.Path.GetFileNameWithoutExtension(prefabThumbPaths[index])); } catch {}
 			}
 			return;
 		}

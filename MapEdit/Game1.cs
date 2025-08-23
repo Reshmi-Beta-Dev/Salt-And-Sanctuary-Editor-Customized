@@ -203,6 +203,29 @@ public class Game1 : Game
 
 	public const int PALETTE_COL_COUNT = 5;
 
+	// Glue/Parenting state
+	private struct GroupMemberRef
+	{
+		public int layerIndex;
+		public int segIndex;
+	}
+
+	private class GluedChild
+	{
+		public GroupMemberRef member;
+		public Vector2 localOffset; // In parent-local XY basis
+		public float localRotation; // child.rotation - parent.rotation
+		public Vector2 scaleRatio; // child.scale / parent.scale
+	}
+
+	private static bool glueActive;
+	private static GroupMemberRef glueParent;
+	private static readonly List<GluedChild> gluedChildren = new List<GluedChild>();
+	private static bool parentTransformChanged;
+
+	// Prefab mode: gate glue/parenting behaviors to Prefabs only
+	public static bool prefabMode;
+
 	public Game1(IntPtr drawSurface)
 	{
 		graphics = new GraphicsDeviceManager(this);
@@ -745,20 +768,43 @@ public class Game1 : Game
 		}
 		if (Program.gui.IsPictureFocus() && (double)vector.X > 0.0 && (double)vector.Y > 0.0 && (double)vector.X < 1280.0 && (double)vector.Y < 720.0)
 		{
-			if (mouseWheel > 0)
+			// Ctrl+MouseWheel: scale active group; else zoom
+			if (mouseWheel != 0)
 			{
-				gZoom += (float)mouseWheel / 44f;
-			}
-			if (mouseWheel < 0)
-			{
-				gZoom += (float)mouseWheel / 44f;
+				if (isCtrl && prefabMode && glueActive && TryGetParentSeg(out Seg parentSeg))
+				{
+					if (parentSeg.isLocked) { /* ignore when locked */ }
+					else {
+					float step = (mouseWheel > 0 ? 1f : -1f) * 0.05f;
+					Vector2 deltaScale = new Vector2(step, step);
+					parentSeg.scaling += deltaScale;
+					ClampScale(parentSeg);
+					parentTransformChanged = true;
+					RecomputeChildrenFromParent();
+					}
+				}
+				else
+				{
+					gZoom += (float)mouseWheel / 44f;
+				}
 			}
 			if (mouseState.MiddleButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && preState.MiddleButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed)
 			{
 				Vector2 vector2 = vector - pmVec;
 				if (flag2)
 				{
-					if (selLayer > -1 && selLayer < 20 && selSeg > -1)
+					if (glueActive && TryGetParentSeg(out Seg pSc))
+					{
+						if (flipMode)
+						{
+							vector2 *= new Vector2(-1f, -1f);
+						}
+						pSc.scaling += vector2 / ScrollManager.GetSize(1f) * 0.01f;
+						ClampScale(pSc);
+						parentTransformChanged = true;
+						RecomputeChildrenFromParent();
+					}
+					else if (selLayer > -1 && selLayer < 20 && selSeg > -1)
 					{
 						Seg seg2 = map.layer[selLayer].seg[selSeg];
 						if (seg2 != null && flag3)
@@ -930,15 +976,29 @@ public class Game1 : Game
 					actorMgr.actor[num22].key = 0;
 				}
 			}
-            if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1 && selSeg < map.layer[selLayer].seg.Count)
+			// Move: if in prefab mode and a glue parent exists, route LMB drag to the parent
+			if (preState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.LeftButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && ((selLayer > -1 && selLayer < 20 && selSeg > -1 && selSeg < map.layer[selLayer].seg.Count) || (prefabMode && glueActive)))
 			{
 				try
 				{
-					Seg seg5 = map.layer[selLayer].seg[selSeg];
-                    if (seg5 != null && flag3 && !seg5.isLocked)
+					if (prefabMode && glueActive && TryGetParentSeg(out Seg pSeg))
 					{
-						Vector2 vector3 = vector - pmVec;
-						seg5.loc += vector3 / ScrollManager.GetSize(seg5.depth);
+						if (!pSeg.isLocked)
+						{
+							Vector2 vector3 = vector - pmVec;
+							pSeg.loc += vector3 / ScrollManager.GetSize(pSeg.depth);
+							parentTransformChanged = true;
+							RecomputeChildrenFromParent();
+						}
+					}
+					else
+					{
+						Seg seg5 = map.layer[selLayer].seg[selSeg];
+						if (seg5 != null && flag3 && !seg5.isLocked)
+						{
+							Vector2 vector3 = vector - pmVec;
+							seg5.loc += vector3 / ScrollManager.GetSize(seg5.depth);
+						}
 					}
 				}
 				catch (Exception)
@@ -951,38 +1011,54 @@ public class Game1 : Game
 				map.mapGrid.needsUpdate = true;
 				needsActorUpdate = true;
 			}
-			// Right-click rotation for selected segment (original system)
-			if (preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && selLayer > -1 && selLayer < 20 && selSeg > -1)
+			// Right-click rotation: in prefab mode, route to parent if group is active
+			if (preState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && mouseState.RightButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed && ((selLayer > -1 && selLayer < 20 && selSeg > -1) || (prefabMode && glueActive)))
 			{
-				Seg seg6 = map.layer[selLayer].seg[selSeg];
-				if (seg6 != null && flag3 && !seg6.isLocked)
+				if (prefabMode && glueActive && TryGetParentSeg(out Seg pRot))
 				{
-					Vector2 vector4 = vector - pmVec;
-					if (selLayer == 19)
+					if (!pRot.isLocked)
 					{
-						if ((double)vector4.Y > 0.0)
-						{
-							seg6.intFlag = 0;
-						}
-						else if ((double)vector4.Y < 0.0)
-						{
-							seg6.intFlag = 1;
-						}
+						Vector2 vector4 = vector - pmVec;
+						if (flipMode) vector4.Y *= -1f;
+						pRot.rotation += vector4.Y / 120f;
+						while ((double)pRot.rotation < 0.0) pRot.rotation += 6.28f;
+						while ((double)pRot.rotation > 6.28000020980835) pRot.rotation -= 6.28f;
+						parentTransformChanged = true;
+						RecomputeChildrenFromParent();
 					}
-					else
+				}
+				else
+				{
+					Seg seg6 = map.layer[selLayer].seg[selSeg];
+					if (seg6 != null && flag3 && !seg6.isLocked)
 					{
-						if (flipMode)
+						Vector2 vector4 = vector - pmVec;
+						if (selLayer == 19)
 						{
-							vector4.Y *= -1f;
+							if ((double)vector4.Y > 0.0)
+							{
+								seg6.intFlag = 0;
+							}
+							else if ((double)vector4.Y < 0.0)
+							{
+								seg6.intFlag = 1;
+							}
 						}
-						seg6.rotation += vector4.Y / 120f;
-						while ((double)seg6.rotation < 0.0)
+						else
 						{
-							seg6.rotation += 6.28f;
-						}
-						while ((double)seg6.rotation > 6.28000020980835)
-						{
-							seg6.rotation -= 6.28f;
+							if (flipMode)
+							{
+								vector4.Y *= -1f;
+							}
+							seg6.rotation += vector4.Y / 120f;
+							while ((double)seg6.rotation < 0.0)
+							{
+								seg6.rotation += 6.28f;
+							}
+							while ((double)seg6.rotation > 6.28000020980835)
+							{
+								seg6.rotation -= 6.28f;
+							}
 						}
 					}
 				}
@@ -1031,13 +1107,17 @@ public class Game1 : Game
 					flag = false;
 				}
 			}
-			if (!flag || selLayer <= -1 || selLayer >= 20 || pressedKeys[i] != Microsoft.Xna.Framework.Input.Keys.Delete)
+			if (!flag || pressedKeys[i] != Microsoft.Xna.Framework.Input.Keys.Delete)
 			{
 				continue;
 			}
 			try
 			{
-				if (inView)
+				if (glueActive && TryGetParentSeg(out Seg delParent))
+				{
+					DeleteActiveGroup();
+				}
+				else if (inView && selLayer > -1 && selLayer < 20 && selSeg > -1)
 				{
 					map.sequenceMgr.UpdateAffectedSegs();
 					map.sequenceMgr.Delete(selLayer, selSeg);
@@ -1128,6 +1208,71 @@ public class Game1 : Game
 				}
 			}
 		}
+
+		// G: glue – only in prefab mode; first press sets parent from selected; then glue hovered as child (ignore Ctrl+G)
+		if (prefabMode && !ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
+		{
+			if (!glueActive)
+			{
+				if (selLayer > -1 && selLayer < 20 && selSeg > -1 && selSeg < map.layer[selLayer].seg.Count)
+				{
+					SetGlueParent(selLayer, selSeg);
+				}
+			}
+			else
+			{
+				int hLayer, hSeg;
+				if (TryGetHoveredSegment(out hLayer, out hSeg, true))
+				{
+					TryGlueChild(hLayer, hSeg);
+				}
+			}
+		}
+
+		// U: unglue all (only in prefab mode)
+		if (prefabMode && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.U))
+		{
+			UnglueAll();
+		}
+
+		// Ctrl+',' and Ctrl+'.' scale group around parent pivot (only in prefab mode)
+		if (prefabMode && ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.OemComma))
+		{
+			if (glueActive && TryGetParentSeg(out Seg s1))
+			{
+				s1.scaling *= 0.5f;
+				ClampScale(s1);
+				parentTransformChanged = true;
+				RecomputeChildrenFromParent();
+			}
+		}
+		if (prefabMode && ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.OemPeriod))
+		{
+			if (glueActive && TryGetParentSeg(out Seg s2))
+			{
+				s2.scaling *= 2f;
+				ClampScale(s2);
+				parentTransformChanged = true;
+				RecomputeChildrenFromParent();
+			}
+		}
+
+		// Ctrl+Up / Ctrl+Down: move entire group within layer ordering (preserve internal order) – prefab mode only
+		if (prefabMode && ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Up))
+		{
+			if (glueActive)
+			{
+				MoveActiveGroupInLayer(true);
+			}
+		}
+		if (prefabMode && ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Down))
+		{
+			if (glueActive)
+			{
+				MoveActiveGroupInLayer(false);
+			}
+		}
+
 		oldKeyState = state;
 	}
 
@@ -1943,6 +2088,223 @@ public class Game1 : Game
 			Program.gui.ConsoleWriteLine(num5 + ": " + item7.Key + ": " + item7.Value);
 			num5++;
 		}
+	}
+
+	private static bool TryGetParentSeg(out Seg parent)
+	{
+		parent = null;
+		if (!glueActive) return false;
+		if (glueParent.layerIndex < 0 || glueParent.layerIndex >= map.layer.Length) return false;
+		Layer layerData = map.layer[glueParent.layerIndex];
+		if (glueParent.segIndex < 0 || glueParent.segIndex >= layerData.seg.Count) return false;
+		parent = layerData.seg[glueParent.segIndex];
+		return parent != null;
+	}
+
+	private static void SetGlueParent(int layer, int seg)
+	{
+		glueParent = new GroupMemberRef { layerIndex = layer, segIndex = seg };
+		gluedChildren.Clear();
+		glueActive = true;
+		parentTransformChanged = true;
+	}
+
+	private static void UnglueAll()
+	{
+		glueActive = false;
+		gluedChildren.Clear();
+		glueParent = default(GroupMemberRef);
+		parentTransformChanged = false;
+	}
+
+	private static bool IsSameRef(int layer, int seg, GroupMemberRef r)
+	{
+		return r.layerIndex == layer && r.segIndex == seg;
+	}
+
+	private static bool TryGlueChild(int layer, int seg)
+	{
+		if (!glueActive || IsSameRef(layer, seg, glueParent)) return false;
+		if (!TryGetParentSeg(out Seg parentSeg)) return false;
+		Layer childLayer = map.layer[layer];
+		if (seg < 0 || seg >= childLayer.seg.Count) return false;
+		Seg child = childLayer.seg[seg];
+		if (child == null) return false;
+
+		// Compute offsets in parent-local basis
+		Vector2 delta = child.loc - parentSeg.loc;
+		float px = (float)Math.Cos(parentSeg.rotation);
+		float py = (float)Math.Sin(parentSeg.rotation);
+		float qx = (float)Math.Cos(parentSeg.rotation + 1.57079637f);
+		float qy = (float)Math.Sin(parentSeg.rotation + 1.57079637f);
+		float localX = delta.X * px + delta.Y * py;
+		float localY = delta.X * qx + delta.Y * qy;
+		Vector2 localOffset = new Vector2(localX, localY);
+
+		// Rotation and scale ratios
+		float localRot = child.rotation - parentSeg.rotation;
+		while (localRot > 3.14159274f) localRot -= 6.28318548f;
+		while (localRot < -3.14159274f) localRot += 6.28318548f;
+		Vector2 ratio = new Vector2(
+			SafeDiv(child.scaling.X, parentSeg.scaling.X),
+			SafeDiv(child.scaling.Y, parentSeg.scaling.Y)
+		);
+
+		// Avoid duplicates
+		if (!gluedChildren.Any(gc => gc.member.layerIndex == layer && gc.member.segIndex == seg))
+		{
+			gluedChildren.Add(new GluedChild
+			{
+				member = new GroupMemberRef { layerIndex = layer, segIndex = seg },
+				localOffset = localOffset,
+				localRotation = localRot,
+				scaleRatio = ratio
+			});
+			parentTransformChanged = true;
+			RecomputeChildrenFromParent();
+			return true;
+		}
+		return false;
+	}
+
+	private static void RecomputeChildrenFromParent()
+	{
+		if (!glueActive || !parentTransformChanged) return;
+		if (!TryGetParentSeg(out Seg parentSeg)) return;
+
+		float px = (float)Math.Cos(parentSeg.rotation);
+		float py = (float)Math.Sin(parentSeg.rotation);
+		float qx = (float)Math.Cos(parentSeg.rotation + 1.57079637f);
+		float qy = (float)Math.Sin(parentSeg.rotation + 1.57079637f);
+
+		for (int i = 0; i < gluedChildren.Count; i++)
+		{
+			GluedChild gc = gluedChildren[i];
+			if (gc.member.layerIndex < 0 || gc.member.layerIndex >= map.layer.Length) continue;
+			Layer l = map.layer[gc.member.layerIndex];
+			if (gc.member.segIndex < 0 || gc.member.segIndex >= l.seg.Count) continue;
+			Seg child = l.seg[gc.member.segIndex];
+			if (child == null) continue;
+
+			Vector2 offsetWorld = new Vector2(
+				gc.localOffset.X * px + gc.localOffset.Y * qx,
+				gc.localOffset.X * py + gc.localOffset.Y * qy
+			);
+			// Apply parent scale to offsets
+			offsetWorld *= new Vector2(parentSeg.scaling.X, parentSeg.scaling.Y);
+
+			child.loc = parentSeg.loc + offsetWorld;
+			child.rotation = WrapAngle(parentSeg.rotation + gc.localRotation);
+			child.scaling = new Vector2(parentSeg.scaling.X * gc.scaleRatio.X, parentSeg.scaling.Y * gc.scaleRatio.Y);
+		}
+
+		parentTransformChanged = false;
+	}
+
+	private static float WrapAngle(float a)
+	{
+		while (a < 0f) a += 6.28318548f;
+		while (a > 6.28318548f) a -= 6.28318548f;
+		return a;
+	}
+
+	private static float SafeDiv(float a, float b)
+	{
+		if (Math.Abs(b) < 1e-4f) return 1f;
+		return a / b;
+	}
+
+	private static void ClampScale(Seg s)
+	{
+		float min = 0.05f, max = 10f;
+		s.scaling.X = Math.Min(max, Math.Max(min, s.scaling.X));
+		s.scaling.Y = Math.Min(max, Math.Max(min, s.scaling.Y));
+	}
+
+	private static void MoveActiveGroupInLayer(bool toTop)
+	{
+		if (!glueActive) return;
+		// Build per-layer lists including parent first then children on same layer
+		Dictionary<int, List<int>> layerToIndices = new Dictionary<int, List<int>>();
+		Action<int,int> addIdx = (layer, idx) =>
+		{
+			if (!layerToIndices.ContainsKey(layer)) layerToIndices[layer] = new List<int>();
+			if (!layerToIndices[layer].Contains(idx)) layerToIndices[layer].Add(idx);
+		};
+		addIdx(glueParent.layerIndex, glueParent.segIndex);
+		for (int i = 0; i < gluedChildren.Count; i++)
+		{
+			addIdx(gluedChildren[i].member.layerIndex, gluedChildren[i].member.segIndex);
+		}
+
+		foreach (var kv in layerToIndices)
+		{
+			int layer = kv.Key;
+			List<int> indices = kv.Value.OrderBy(i => i).ToList(); // preserve relative order
+			Layer l = map.layer[layer];
+			if (toTop)
+			{
+				// Move each index towards the end, preserving relative order
+				for (int i = indices.Count - 1; i >= 0; i--)
+				{
+					int idx = indices[i];
+					if (idx < 0 || idx >= l.seg.Count) continue;
+					Seg temp = l.seg[idx];
+					l.seg.RemoveAt(idx);
+					l.seg.Add(temp);
+				}
+			}
+			else
+			{
+				// Move each index towards the start, preserving relative order
+				int insertAt = 0;
+				for (int i = 0; i < indices.Count; i++)
+				{
+					int idx = indices[i];
+					if (idx < 0 || idx >= l.seg.Count) continue;
+					Seg temp = l.seg[idx];
+					l.seg.RemoveAt(idx);
+					l.seg.Insert(insertAt, temp);
+					insertAt++;
+				}
+			}
+		}
+		map.sequenceMgr.UpdateAffectedSegs();
+		Program.gui.PopulateMapCells();
+	}
+
+	private static void DeleteActiveGroup()
+	{
+		if (!glueActive) return;
+		// Delete children first to keep parent indices stable if possible
+		// Collect member refs (parent + children)
+		List<GroupMemberRef> refs = new List<GroupMemberRef>();
+		refs.Add(glueParent);
+		for (int i = 0; i < gluedChildren.Count; i++) refs.Add(gluedChildren[i].member);
+
+		// Sort descending by seg index per layer so removals don't invalidate following indices
+		foreach (var g in refs.GroupBy(r => r.layerIndex))
+		{
+			int layer = g.Key;
+			Layer l = map.layer[layer];
+			foreach (var r in g.OrderByDescending(x => x.segIndex))
+			{
+				if (r.segIndex >= 0 && r.segIndex < l.seg.Count)
+				{
+					map.sequenceMgr.UpdateAffectedSegs();
+					map.sequenceMgr.Delete(layer, r.segIndex);
+					l.seg.RemoveAt(r.segIndex);
+				}
+			}
+		}
+		map.mapGrid.needsUpdate = true;
+		needsActorUpdate = true;
+		UnglueAll();
+	}
+
+	public static bool HasActiveGlueGroup()
+	{
+		return glueActive;
 	}
 }
 

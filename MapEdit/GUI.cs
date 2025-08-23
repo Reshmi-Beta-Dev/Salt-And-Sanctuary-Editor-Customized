@@ -391,6 +391,11 @@ public class GUI : Form
 				lstSheets.Items.Add(key);
 			}
 		}
+		// Add Prefabs sheet entry (UI toggle for prefabMode)
+		if (!lstSheets.Items.Contains("Prefabs"))
+		{
+			lstSheets.Items.Add("Prefabs");
+		}
 	}
 
 	private void lstSheets_SelectedIndexChanged(object sender, EventArgs e)
@@ -404,15 +409,27 @@ public class GUI : Form
 				txtRScript.Visible = false;
 			}
 			Game1.selTex = (string)lstSheets.Items[lstSheets.SelectedIndex];
-			UpdateCellTree();
-			try { trvCells.ExpandAll(); } catch {}
-			// also auto-select the first node so palette draws immediately
-			try { if (trvCells.Nodes.Count > 0) trvCells.SelectedNode = trvCells.Nodes[0]; } catch {}
-			Game1.needsPaletteDraw = true;
-			lstCells.Items.Clear();
-			for (int i = 0; i < Game1.textures[Game1.selTex].cell.Length && Game1.textures[Game1.selTex].cell[i] != null; i++)
+			// Enable prefab mode only when the "Prefabs" sheet is selected
+			Game1.prefabMode = string.Equals(Game1.selTex, "Prefabs", StringComparison.OrdinalIgnoreCase);
+			if (!Game1.prefabMode)
 			{
-				lstCells.Items.Add(Game1.textures[Game1.selTex].cell[i].name);
+				UpdateCellTree();
+				try { trvCells.ExpandAll(); } catch {}
+				// also auto-select the first node so palette draws immediately
+				try { if (trvCells.Nodes.Count > 0) trvCells.SelectedNode = trvCells.Nodes[0]; } catch {}
+				Game1.needsPaletteDraw = true;
+				lstCells.Items.Clear();
+				for (int i = 0; i < Game1.textures[Game1.selTex].cell.Length && Game1.textures[Game1.selTex].cell[i] != null; i++)
+				{
+					lstCells.Items.Add(Game1.textures[Game1.selTex].cell[i].name);
+				}
+			}
+			else
+			{
+				// In prefab mode, we will render prefab thumbnails in a future step
+				trvCells.Visible = false;
+				lstCells.Visible = false;
+				Game1.needsPaletteDraw = false;
 			}
 		}
 	}
@@ -1482,6 +1499,15 @@ public class GUI : Form
 
 	private void pctCells_MouseMove(object sender, MouseEventArgs e)
 	{
+		if (Game1.prefabMode)
+		{
+			// No texture palette in Prefabs mode yet; disable hover label
+			if (txtPaletteHover.Visible)
+			{
+				txtPaletteHover.Visible = false;
+			}
+			return;
+		}
 		if ((e.Button == MouseButtons.Middle || e.Button == MouseButtons.Right) && paletteScrolling)
 		{
 			System.Drawing.Point position = Cursor.Position;
@@ -1889,6 +1915,11 @@ public class GUI : Form
 
 	private void pctCells_Click(object sender, EventArgs e)
 	{
+		if (Game1.prefabMode)
+		{
+			// Prefab spawning will be handled separately; ignore texture clicks
+			return;
+		}
         if (Game1.selLayer <= -1 || Game1.selLayer >= 20)
         {
             return;

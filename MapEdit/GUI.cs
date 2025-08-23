@@ -214,6 +214,8 @@ public class GUI : Form
 	[DllImport("user32.dll")]
 	public static extern bool LockWindowUpdate(IntPtr hWndLock);
 
+	private List<string> prefabThumbPaths = new List<string>();
+
 	public GUI()
 	{
 		InitializeComponent();
@@ -426,12 +428,50 @@ public class GUI : Form
 			}
 			else
 			{
-				// In prefab mode, we will render prefab thumbnails in a future step
+				// In prefab mode, render prefab thumbnails
 				trvCells.Visible = false;
 				lstCells.Visible = false;
 				Game1.needsPaletteDraw = false;
+				try { RenderPrefabsPalette(); } catch {}
 			}
 		}
+	}
+
+	private void RenderPrefabsPalette()
+	{
+		string dir = "./prefabs";
+		prefabThumbPaths.Clear();
+		if (!Directory.Exists(dir))
+		{
+			pnlCells.Visible = true;
+			pctCells.Visible = true;
+			pctCells.Image = new Bitmap(280, 56);
+			pctCells.Size = new Size(280, 56);
+			return;
+		}
+		// List JSON prefab names as text entries
+		string[] jsons = Directory.GetFiles(dir, "*.json");
+		int cellW = 280, cellH = 24;
+		int rows = Math.Max(1, jsons.Length);
+		int bmpW = cellW;
+		int bmpH = rows * cellH;
+		Bitmap bmp = new Bitmap(bmpW, bmpH);
+		using (Graphics g = Graphics.FromImage(bmp))
+		{
+			g.Clear(System.Drawing.Color.FromArgb(50, 50, 50));
+			for (int i = 0; i < jsons.Length; i++)
+			{
+				string file = Path.GetFileNameWithoutExtension(jsons[i]);
+				var rect = new System.Drawing.Rectangle(0, i * cellH, cellW, cellH);
+				using (var brush = new SolidBrush(System.Drawing.Color.FromArgb(70, 70, 70))) g.FillRectangle(brush, rect);
+				g.DrawString(file, new System.Drawing.Font("Arial", 10f, System.Drawing.FontStyle.Regular), System.Drawing.Brushes.White, new System.Drawing.PointF(6, rect.Y + 4));
+				using (var pen = new Pen(System.Drawing.Color.FromArgb(80, 255, 255, 255))) g.DrawRectangle(pen, rect);
+			}
+		}
+		pnlCells.Visible = true;
+		pctCells.Visible = true;
+		pctCells.Image = bmp;
+		pctCells.Size = new Size(bmpW, bmpH);
 	}
 
 	private void lstCells_SelectedIndexChanged(object sender, EventArgs e)

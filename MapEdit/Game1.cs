@@ -946,7 +946,15 @@ public class Game1 : Game
 						Vector2 realLoc5 = ScrollManager.GetRealLoc(vector, seg3.depth);
 						if ((double)realLoc5.X > (double)segRect.Left && (double)realLoc5.Y > (double)segRect.Top && (double)realLoc5.X < (double)segRect.Right && (double)realLoc5.Y < (double)segRect.Bottom)
 						{
-                            if (!seg3.isLocked) selSeg = num21;
+							// In Prefabs mode with an active group, prevent selecting group members
+							if (prefabMode && glueActive && IsInActiveGroup(selLayer, num21))
+							{
+								// Skip selection
+							}
+							else if (!seg3.isLocked)
+							{
+								selSeg = num21;
+							}
 						}
 					}
 				}
@@ -1270,6 +1278,15 @@ public class Game1 : Game
 			if (glueActive)
 			{
 				MoveActiveGroupInLayer(false);
+			}
+		}
+
+		// Ctrl+Shift+S: save current prefab definition (parent + children) to ./prefabs
+		if (prefabMode && ctrlDown && isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.S))
+		{
+			if (glueActive && TryGetParentSeg(out Seg _))
+			{
+				try { SaveActivePrefab(); Program.gui.ConsoleWriteLine("Prefab saved to ./prefabs/"); } catch {}
 			}
 		}
 
@@ -2349,6 +2366,54 @@ public class Game1 : Game
 				SpriteTools.sprite.DrawString(arial, "C", c, new Microsoft.Xna.Framework.Color(1f, 1f, 0.2f, 0.9f), 0f, new Vector2(8f, 24f), 1.0f, SpriteEffects.None, 1f);
 			}
 		}
+	}
+
+	private static bool IsInActiveGroup(int layerIndex, int segIndex)
+	{
+		if (!glueActive) return false;
+		if (glueParent.layerIndex == layerIndex && glueParent.segIndex == segIndex) return true;
+		for (int i = 0; i < gluedChildren.Count; i++)
+		{
+			var r = gluedChildren[i].member;
+			if (r.layerIndex == layerIndex && r.segIndex == segIndex) return true;
+		}
+		return false;
+	}
+
+	private static void SaveActivePrefab()
+	{
+		if (!glueActive) return;
+		Seg parent;
+		if (!TryGetParentSeg(out parent)) return;
+		string dir = "./prefabs";
+		if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+		string name = $"prefab-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+		string path = Path.Combine(dir, name + ".json");
+		var sb = new System.Text.StringBuilder();
+		sb.Append("{\n");
+		sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "  \"parent\": {{ \"texture\": \"{0}\", \"idx\": {1}, \"scaleX\": {2}, \"scaleY\": {3}, \"rotation\": {4} }},\n", parent.texture ?? "", parent.idx, parent.scaling.X, parent.scaling.Y, parent.rotation);
+		sb.Append("  \"members\": [\n");
+		for (int i = 0; i < gluedChildren.Count; i++)
+		{
+			var r = gluedChildren[i].member;
+			if (r.layerIndex < 0 || r.layerIndex >= map.layer.Length) continue;
+			Layer l = map.layer[r.layerIndex];
+			if (r.segIndex < 0 || r.segIndex >= l.seg.Count) continue;
+			Seg child = l.seg[r.segIndex];
+			if (child == null) continue;
+			var gc = gluedChildren[i];
+			sb.Append("    {");
+			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"texture\": \"{0}\", \"idx\": {1}, \"layer\": {2}, ", child.texture ?? "", child.idx, r.layerIndex);
+			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"localOffsetX\": {0}, \"localOffsetY\": {1}, ", gc.localOffset.X, gc.localOffset.Y);
+			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"localRotation\": {0}, ", gc.localRotation);
+			sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "\"scaleRatioX\": {0}, \"scaleRatioY\": {1}", gc.scaleRatio.X, gc.scaleRatio.Y);
+			sb.Append(" }");
+			if (i < gluedChildren.Count - 1) sb.Append(",");
+			sb.Append("\n");
+		}
+		sb.Append("  ]\n}");
+		File.WriteAllText(path, sb.ToString());
+		// PNG thumbnail generation intentionally omitted per requirements
 	}
 }
 

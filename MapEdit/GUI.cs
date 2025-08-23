@@ -393,11 +393,9 @@ public class GUI : Form
 				lstSheets.Items.Add(key);
 			}
 		}
-		// Add Prefabs sheet entry (UI toggle for prefabMode)
-		if (!lstSheets.Items.Contains("Prefabs"))
-		{
-			lstSheets.Items.Add("Prefabs");
-		}
+		// Add Prefabs sheet entry (UI toggle for prefabMode) – always keep at top
+		if (lstSheets.Items.Contains("Prefabs")) lstSheets.Items.Remove("Prefabs");
+		lstSheets.Items.Insert(0, "Prefabs");
 	}
 
 	private void lstSheets_SelectedIndexChanged(object sender, EventArgs e)
@@ -451,6 +449,7 @@ public class GUI : Form
 		}
 		// List JSON prefab names as text entries
 		string[] jsons = Directory.GetFiles(dir, "*.json");
+		prefabThumbPaths.AddRange(jsons);
 		int cellW = 280, cellH = 24;
 		int rows = Math.Max(1, jsons.Length);
 		int bmpW = cellW;
@@ -1957,7 +1956,13 @@ public class GUI : Form
 	{
 		if (Game1.prefabMode)
 		{
-			// Prefab spawning will be handled separately; ignore texture clicks
+			// Spawn prefab from clicked row
+			System.Drawing.Point mouse = pctCells.PointToClient(Cursor.Position);
+			int row = mouse.Y / 24; // matches cellH in RenderPrefabsPalette
+			if (row >= 0 && row < prefabThumbPaths.Count)
+			{
+				try { MapEdit.Game1.SpawnPrefabFromJson(prefabThumbPaths[row]); Program.gui.ConsoleWriteLine("Spawned prefab: " + System.IO.Path.GetFileNameWithoutExtension(prefabThumbPaths[row])); } catch {}
+			}
 			return;
 		}
         if (Game1.selLayer <= -1 || Game1.selLayer >= 20)

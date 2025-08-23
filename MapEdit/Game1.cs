@@ -2391,7 +2391,7 @@ public class Game1 : Game
 		string path = Path.Combine(dir, name + ".json");
 		var sb = new System.Text.StringBuilder();
 		sb.Append("{\n");
-		sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "  \"parent\": {{ \"texture\": \"{0}\", \"idx\": {1}, \"scaleX\": {2}, \"scaleY\": {3}, \"rotation\": {4} }},\n", parent.texture ?? "", parent.idx, parent.scaling.X, parent.scaling.Y, parent.rotation);
+		sb.AppendFormat(System.Globalization.CultureInfo.InvariantCulture, "  \"parent\": {{ \"texture\": \"{0}\", \"idx\": {1}, \"scaleX\": {2}, \"scaleY\": {3}, \"rotation\": {4}, \"layer\": {5} }},\n", parent.texture ?? "", parent.idx, parent.scaling.X, parent.scaling.Y, parent.rotation, glueParent.layerIndex);
 		sb.Append("  \"members\": [\n");
 		for (int i = 0; i < gluedChildren.Count; i++)
 		{
@@ -2414,6 +2414,127 @@ public class Game1 : Game
 		sb.Append("  ]\n}");
 		File.WriteAllText(path, sb.ToString());
 		// PNG thumbnail generation intentionally omitted per requirements
+	}
+
+	public static void SpawnPrefabFromJson(string jsonPath)
+	{
+		try
+		{
+			if (!File.Exists(jsonPath)) return;
+			string txt = File.ReadAllText(jsonPath);
+			// Extract parent block
+			int pIdx = txt.IndexOf("\"parent\"");
+			if (pIdx < 0) return;
+			int pbStart = txt.IndexOf('{', pIdx);
+			int pbEnd = txt.IndexOf('}', pbStart);
+			if (pbStart < 0 || pbEnd < 0) return;
+			string pBlock = txt.Substring(pbStart + 1, pbEnd - pbStart - 1);
+			string pTex = ExtractString(pBlock, "\"texture\"");
+			int pCell = ExtractInt(pBlock, "\"idx\"");
+			float pScaleX = ExtractFloat(pBlock, "\"scaleX\"");
+			float pScaleY = ExtractFloat(pBlock, "\"scaleY\"");
+			float pRot = ExtractFloat(pBlock, "\"rotation\"");
+			int pLayerSaved = ExtractInt(pBlock, "\"layer\"");
+			// Members array
+			int membersIdx = txt.IndexOf("\"members\"");
+			if (membersIdx < 0) return;
+			int arrStart = txt.IndexOf('[', membersIdx);
+			int arrEnd = txt.IndexOf(']', arrStart);
+			if (arrStart < 0 || arrEnd < 0) return;
+			string arr = txt.Substring(arrStart + 1, arrEnd - arrStart - 1);
+			string[] items = arr.Split(new char[] { '}' }, StringSplitOptions.RemoveEmptyEntries);
+			Vector2 baseLoc = ScrollManager.scroll; // spawn at current scroll
+			// Choose parent layer: use saved layer if valid; else current selection; else mid layer 15
+			int parentLayer = (pLayerSaved >= 0 && pLayerSaved < 20) ? pLayerSaved : ((selLayer >= 0 && selLayer < 20) ? selLayer : 15);
+			if (items.Length > 0)
+			{
+				int testLayer = ExtractInt(items[0], "\"layer\"");
+				if (testLayer >= 0 && testLayer < 20) parentLayer = testLayer;
+			}
+			// Spawn parent
+			Seg pSeg = new Seg();
+			pSeg.texture = pTex;
+			pSeg.idx = pCell;
+			pSeg.scaling = new Vector2(pScaleX == 0 ? 1f : pScaleX, pScaleY == 0 ? 1f : pScaleY);
+			pSeg.rotation = pRot;
+			pSeg.loc = baseLoc;
+			map.layer[parentLayer].seg.Add(pSeg);
+			int parentIdx = map.layer[parentLayer].seg.Count - 1;
+			// Spawn children
+			List<GroupMemberRef> spawned = new List<GroupMemberRef>();
+			List<GluedChild> newChildren = new List<GluedChild>();
+			for (int ii = 0; ii < items.Length; ii++)
+			{
+				string it = items[ii];
+				int texIdx = it.IndexOf("\"texture\""); if (texIdx < 0) continue;
+				string texture = ExtractString(it, "\"texture\"");
+				int idx = ExtractInt(it, "\"idx\"");
+				int layerIdx = ExtractInt(it, "\"layer\"");
+				float offX = ExtractFloat(it, "\"localOffsetX\"");
+				float offY = ExtractFloat(it, "\"localOffsetY\"");
+				float rot = ExtractFloat(it, "\"localRotation\"");
+				float srx = ExtractFloat(it, "\"scaleRatioX\"");
+				float sry = ExtractFloat(it, "\"scaleRatioY\"");
+				if (layerIdx < 0 || layerIdx >= map.layer.Length) continue;
+				Seg seg = new Seg();
+				seg.texture = texture;
+				seg.idx = idx;
+				seg.scaling = new Vector2(Math.Max(0.01f, pSeg.scaling.X * srx), Math.Max(0.01f, pSeg.scaling.Y * sry));
+				seg.rotation = WrapAngle(pSeg.rotation + rot);
+				// position from normalized offset
+				float px = (float)Math.Cos(pSeg.rotation); float py = (float)Math.Sin(pSeg.rotation);
+				float qx = (float)Math.Cos(pSeg.rotation + 1.57079637f); float qy = (float)Math.Sin(pSeg.rotation + 1.57079637f);
+				Vector2 worldOffset = new Vector2(offX * pSeg.scaling.X, offY * pSeg.scaling.Y);
+				Vector2 world = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy);
+				seg.loc = baseLoc + world;
+				map.layer[layerIdx].seg.Add(seg);
+				spawned.Add(new GroupMemberRef { layerIndex = layerIdx, segIndex = map.layer[layerIdx].seg.Count - 1 });
+				newChildren.Add(new GluedChild
+				{
+					member = spawned[spawned.Count - 1],
+					localOffset = new Vector2(offX, offY),
+					localRotation = rot,
+					scaleRatio = new Vector2(srx, sry)
+				});
+			}
+			// Activate group
+			glueActive = true;
+			glueParent = new GroupMemberRef { layerIndex = parentLayer, segIndex = parentIdx };
+			gluedChildren.Clear();
+			gluedChildren.AddRange(newChildren);
+			parentTransformChanged = true;
+			RecomputeChildrenFromParent();
+			map.mapGrid.needsUpdate = true;
+			needsActorUpdate = true;
+		}
+		catch {}
+	}
+
+	private static string ExtractString(string src, string key)
+	{
+		int k = src.IndexOf(key); if (k < 0) return "";
+		int q1 = src.IndexOf('"', k + key.Length); if (q1 < 0) return "";
+		int q2 = src.IndexOf('"', q1 + 1); if (q2 < 0) return "";
+		return src.Substring(q1 + 1, q2 - q1 - 1);
+	}
+
+	private static int ExtractInt(string src, string key)
+	{
+		float f = ExtractFloat(src, key);
+		return (int)f;
+	}
+
+	private static float ExtractFloat(string src, string key)
+	{
+		int k = src.IndexOf(key); if (k < 0) return 0f;
+		int c = src.IndexOf(':', k); if (c < 0) return 0f;
+		int end = c + 1;
+		while (end < src.Length && (char.IsWhiteSpace(src[end]) || src[end] == '"')) end++;
+		int e = end;
+		while (e < src.Length && (char.IsDigit(src[e]) || src[e] == '-' || src[e] == '.' )) e++;
+		string num = src.Substring(end, e - end);
+		float.TryParse(num, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val);
+		return val;
 	}
 }
 

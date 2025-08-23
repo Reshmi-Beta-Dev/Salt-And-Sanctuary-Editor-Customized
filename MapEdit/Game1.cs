@@ -1651,6 +1651,9 @@ public class Game1 : Game
 			}
 		}
 		
+		// Draw prefab parent/child badges (visual only)
+		DrawGlueBadges();
+		
 		DrawCol();
 		DrawPreview();
 		if (showBloomTextures)
@@ -2141,6 +2144,10 @@ public class Game1 : Game
 		float localY = delta.X * qx + delta.Y * qy;
 		Vector2 localOffset = new Vector2(localX, localY);
 
+		// Normalize by parent scale so a recompute does not nudge the child
+		localOffset.X = SafeDiv(localOffset.X, parentSeg.scaling.X);
+		localOffset.Y = SafeDiv(localOffset.Y, parentSeg.scaling.Y);
+
 		// Rotation and scale ratios
 		float localRot = child.rotation - parentSeg.rotation;
 		while (localRot > 3.14159274f) localRot -= 6.28318548f;
@@ -2305,6 +2312,43 @@ public class Game1 : Game
 	public static bool HasActiveGlueGroup()
 	{
 		return glueActive;
+	}
+
+	private void DrawGlueBadges()
+	{
+		if (!prefabMode || !glueActive || arial == null)
+		{
+			return;
+		}
+		// Draw parent badge
+		Seg parent;
+		if (TryGetParentSeg(out parent))
+		{
+			Vector2 p = ScrollManager.GetScreenLoc(parent.loc, parent.depth);
+			if (p.X > -50 && p.X < ScrollManager.screenSize.X + 50 && p.Y > -50 && p.Y < ScrollManager.screenSize.Y + 50)
+			{
+				// Shadow/outline
+				SpriteTools.sprite.DrawString(arial, "P", p + new Vector2(1f, 1f), new Microsoft.Xna.Framework.Color(0f, 0f, 0f, 0.6f), 0f, new Vector2(8f, 24f), 1.0f, SpriteEffects.None, 1f);
+				// Green P
+				SpriteTools.sprite.DrawString(arial, "P", p, new Microsoft.Xna.Framework.Color(0.2f, 1f, 0.2f, 0.9f), 0f, new Vector2(8f, 24f), 1.0f, SpriteEffects.None, 1f);
+			}
+		}
+		// Draw child badges
+		for (int i = 0; i < gluedChildren.Count; i++)
+		{
+			var r = gluedChildren[i].member;
+			if (r.layerIndex < 0 || r.layerIndex >= map.layer.Length) continue;
+			Layer l = map.layer[r.layerIndex];
+			if (r.segIndex < 0 || r.segIndex >= l.seg.Count) continue;
+			Seg child = l.seg[r.segIndex];
+			if (child == null) continue;
+			Vector2 c = ScrollManager.GetScreenLoc(child.loc, child.depth);
+			if (c.X > -50 && c.X < ScrollManager.screenSize.X + 50 && c.Y > -50 && c.Y < ScrollManager.screenSize.Y + 50)
+			{
+				SpriteTools.sprite.DrawString(arial, "C", c + new Vector2(1f, 1f), new Microsoft.Xna.Framework.Color(0f, 0f, 0f, 0.6f), 0f, new Vector2(8f, 24f), 1.0f, SpriteEffects.None, 1f);
+				SpriteTools.sprite.DrawString(arial, "C", c, new Microsoft.Xna.Framework.Color(1f, 1f, 0.2f, 0.9f), 0f, new Vector2(8f, 24f), 1.0f, SpriteEffects.None, 1f);
+			}
+		}
 	}
 }
 

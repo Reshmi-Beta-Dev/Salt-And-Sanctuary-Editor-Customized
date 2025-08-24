@@ -1319,11 +1319,11 @@ public class Game1 : Game
 		hoveredLayer = -1;
 		hoveredSeg = -1;
 		Vector2 m = MVec();
-		
+ 		
 		// Prioritize layers based on current environment and visual depth
 		int[] priority = new int[20];
 		int priorityIndex = 0;
-		
+ 		
 		// For smart selection (Ctrl+/), ignore current layer
 		// For Space key locking/unlocking, include current layer
 		if (indoors)
@@ -1348,20 +1348,21 @@ public class Game1 : Game
 				}
 			}
 		}
-		
+ 		
 		// Search through prioritized layers
 		for (int p = 0; p < priorityIndex; p++)
 		{
 			int l = priority[p];
 			if (l < 0 || l >= 20) continue;
 			if (!IsLayerInCurrentEnvironment(l)) continue;
-			
-			Layer layerData = map.layer[l];
+ 			Layer layerData = map.layer[l];
 			// Iterate segments backwards to prioritize visually recent/top entries
 			for (int i = layerData.seg.Count - 1; i >= 0; i--)
 			{
 				Seg s = layerData.seg[i];
 				if (s == null) continue;
+				// In Prefabs mode, ignore assets that are already part of the active group (parent or children)
+				if (prefabMode && glueActive && IsInActiveGroup(l, i)) continue;
 				var rect = GetSegRect(s, l);
 				Vector2 rl = ScrollManager.GetRealLoc(m, s.depth);
 				if ((double)rl.X > (double)rect.Left && (double)rl.Y > (double)rect.Top && (double)rl.X < (double)rect.Right && (double)rl.Y < (double)rect.Bottom)
@@ -2543,8 +2544,8 @@ public class Game1 : Game
 			string arr = txt.Substring(arrStart + 1, arrEnd - arrStart - 1);
 			string[] items = arr.Split(new char[] { '}' }, StringSplitOptions.RemoveEmptyEntries);
 			Vector2 baseLoc = ScrollManager.scroll; // spawn at current scroll
-			// Choose parent layer: use saved layer if valid; else current selection; else mid layer 15
-			int parentLayer = (pLayerSaved >= 0 && pLayerSaved < 20) ? pLayerSaved : ((selLayer >= 0 && selLayer < 20) ? selLayer : 15);
+			// Choose parent layer: prefer current selection; else saved layer; else mid layer 15
+			int parentLayer = (selLayer >= 0 && selLayer < 20) ? selLayer : ((pLayerSaved >= 0 && pLayerSaved < 20) ? pLayerSaved : 15);
 			if (items.Length > 0)
 			{
 				int testLayer = ExtractInt(items[0], "\"layer\"");

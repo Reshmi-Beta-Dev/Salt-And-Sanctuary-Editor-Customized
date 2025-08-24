@@ -2550,11 +2550,6 @@ public class Game1 : Game
 			Vector2 baseLoc = ScrollManager.scroll; // spawn at current scroll
 			// Choose parent layer: prefer current selection; else saved layer; else mid layer 15
 			int parentLayer = (selLayer >= 0 && selLayer < 20) ? selLayer : ((pLayerSaved >= 0 && pLayerSaved < 20) ? pLayerSaved : 15);
-			if (items.Length > 0)
-			{
-				int testLayer = ExtractInt(items[0], "\"layer\"");
-				if (testLayer >= 0 && testLayer < 20) parentLayer = testLayer;
-			}
 			// Spawn parent (defer insertion until after we collect all members)
 			Seg pSeg = new Seg();
 			pSeg.texture = pTex;
@@ -2572,7 +2567,7 @@ public class Game1 : Game
 				int texIdx = it.IndexOf("\"texture\""); if (texIdx < 0) continue;
 				string texture = ExtractString(it, "\"texture\"");
 				int idx = ExtractInt(it, "\"idx\"");
-				int layerIdx = ExtractInt(it, "\"layer\"");
+				int layerIdx = parentLayer;
 				float offX = ExtractFloat(it, "\"localOffsetX\"");
 				float offY = ExtractFloat(it, "\"localOffsetY\"");
 				float rot = ExtractFloat(it, "\"localRotation\"");

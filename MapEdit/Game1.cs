@@ -2550,18 +2550,17 @@ public class Game1 : Game
 				int testLayer = ExtractInt(items[0], "\"layer\"");
 				if (testLayer >= 0 && testLayer < 20) parentLayer = testLayer;
 			}
-			// Spawn parent
+			// Spawn parent (defer insertion until after we collect all members)
 			Seg pSeg = new Seg();
 			pSeg.texture = pTex;
 			pSeg.idx = pCell;
 			pSeg.scaling = new Vector2(pScaleX == 0 ? 1f : pScaleX, pScaleY == 0 ? 1f : pScaleY);
 			pSeg.rotation = pRot;
 			pSeg.loc = baseLoc;
-			map.layer[parentLayer].seg.Add(pSeg);
-			int parentIdx = map.layer[parentLayer].seg.Count - 1;
-			// Spawn children
-			List<GroupMemberRef> spawned = new List<GroupMemberRef>();
-			List<GluedChild> newChildren = new List<GluedChild>();
+			// Collect per-layer entries (parent + children)
+			var perLayer = new Dictionary<int, List<PrefabSpawnEntry>>();
+			if (!perLayer.ContainsKey(parentLayer)) perLayer[parentLayer] = new List<PrefabSpawnEntry>();
+			perLayer[parentLayer].Add(new PrefabSpawnEntry { isParent = true, order = pOrder, seg = pSeg, offX = 0f, offY = 0f, rot = 0f, srx = 1f, sry = 1f });
 			for (int ii = 0; ii < items.Length; ii++)
 			{
 				string it = items[ii];
@@ -2574,6 +2573,7 @@ public class Game1 : Game
 				float rot = ExtractFloat(it, "\"localRotation\"");
 				float srx = ExtractFloat(it, "\"scaleRatioX\"");
 				float sry = ExtractFloat(it, "\"scaleRatioY\"");
+				int ord = ExtractInt(it, "\"order\"");
 				if (layerIdx < 0 || layerIdx >= map.layer.Length) continue;
 				Seg seg = new Seg();
 				seg.texture = texture;
@@ -2586,15 +2586,38 @@ public class Game1 : Game
 				Vector2 worldOffset = new Vector2(offX * pSeg.scaling.X, offY * pSeg.scaling.Y);
 				Vector2 world = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy);
 				seg.loc = baseLoc + world;
-				map.layer[layerIdx].seg.Add(seg);
-				spawned.Add(new GroupMemberRef { layerIndex = layerIdx, segIndex = map.layer[layerIdx].seg.Count - 1 });
-				newChildren.Add(new GluedChild
+				if (!perLayer.ContainsKey(layerIdx)) perLayer[layerIdx] = new List<PrefabSpawnEntry>();
+				perLayer[layerIdx].Add(new PrefabSpawnEntry { isParent = false, order = ord, seg = seg, offX = offX, offY = offY, rot = rot, srx = srx, sry = sry });
+			}
+			// Insert per-layer ascending at index 0 so highest order ends up on top
+			foreach (var kv in perLayer)
+			{
+				int lidx = kv.Key;
+				var list = kv.Value.OrderBy(e => e.order).ToList();
+				for (int j = 0; j < list.Count; j++)
 				{
-					member = spawned[spawned.Count - 1],
-					localOffset = new Vector2(offX, offY),
-					localRotation = rot,
-					scaleRatio = new Vector2(srx, sry)
-				});
+					map.layer[lidx].seg.Insert(0, list[j].seg);
+				}
+			}
+			// Resolve parent index and build children refs after insertion
+			int parentIdx = map.layer[parentLayer].seg.IndexOf(pSeg);
+			List<GluedChild> newChildren = new List<GluedChild>();
+			foreach (var kv in perLayer)
+			{
+				int lidx = kv.Key;
+				for (int j = 0; j < kv.Value.Count; j++)
+				{
+					var entry = kv.Value[j];
+					if (entry.isParent) continue;
+					int newIndex = map.layer[lidx].seg.IndexOf(entry.seg);
+					newChildren.Add(new GluedChild
+					{
+						member = new GroupMemberRef { layerIndex = lidx, segIndex = newIndex },
+						localOffset = new Vector2(entry.offX, entry.offY),
+						localRotation = entry.rot,
+						scaleRatio = new Vector2(entry.srx, entry.sry)
+					});
+				}
 			}
 			// Activate group
 			glueActive = true;

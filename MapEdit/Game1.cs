@@ -231,6 +231,7 @@ public class Game1 : Game
 	{
 		public bool isParent;
 		public int order;
+		public int savedLayer;
 		public Seg seg;
 		public float offX;
 		public float offY;
@@ -2408,23 +2409,31 @@ public class Game1 : Game
 			if (!layerToMembers.ContainsKey(r.layerIndex)) layerToMembers[r.layerIndex] = new List<PrefabSpawnEntry>();
 			layerToMembers[r.layerIndex].Add(new PrefabSpawnEntry { isParent = false, order = i + 1, seg = map.layer[r.layerIndex].seg[r.segIndex], offX = 0f, offY = 0f, rot = 0f, srx = 1f, sry = 1f });
 		}
-		// Build order maps per layer (rank by original seg index)
+		// Build order maps per layer using actual seg indices in the layer list (preserve draw stacking)
 		var parentOrderMap = new Dictionary<int, int>(); // layer -> order
-		var childOrderMap = new Dictionary<string, int>(); // key: layer|seg
+		var childOrderMap = new Dictionary<string, int>(); // key: layer|segIndex
 		foreach (var kv in layerToMembers)
 		{
 			int layer = kv.Key;
-			var list = kv.Value.OrderBy(t => t.order).ToList();
-			for (int rank = 0; rank < list.Count; rank++)
+			// Pair each entry with its current seg index in the layer for stable ordering
+			var paired = new List<System.Collections.Generic.KeyValuePair<int, PrefabSpawnEntry>>();
+			for (int i = 0; i < kv.Value.Count; i++)
 			{
-				var item = list[rank];
-				if (item.isParent)
+				PrefabSpawnEntry entry = kv.Value[i];
+				int segIndex = map.layer[layer].seg.IndexOf(entry.seg);
+				paired.Add(new System.Collections.Generic.KeyValuePair<int, PrefabSpawnEntry>(segIndex, entry));
+			}
+			var ordered = paired.OrderBy(p => p.Key).ToList();
+			for (int rank = 0; rank < ordered.Count; rank++)
+			{
+				var item = ordered[rank];
+				if (item.Value.isParent)
 				{
 					parentOrderMap[layer] = rank;
 				}
 				else
 				{
-					childOrderMap[layer.ToString() + "|" + item.seg.idx.ToString()] = rank;
+					childOrderMap[layer.ToString() + "|" + item.Key.ToString()] = rank;
 				}
 			}
 		}
@@ -2560,7 +2569,7 @@ public class Game1 : Game
 			// Collect per-layer entries (parent + children)
 			var perLayer = new Dictionary<int, List<PrefabSpawnEntry>>();
 			if (!perLayer.ContainsKey(parentLayer)) perLayer[parentLayer] = new List<PrefabSpawnEntry>();
-			perLayer[parentLayer].Add(new PrefabSpawnEntry { isParent = true, order = pOrder, seg = pSeg, offX = 0f, offY = 0f, rot = 0f, srx = 1f, sry = 1f });
+			perLayer[parentLayer].Add(new PrefabSpawnEntry { isParent = true, order = pOrder, savedLayer = pLayerSaved, seg = pSeg, offX = 0f, offY = 0f, rot = 0f, srx = 1f, sry = 1f });
 			for (int ii = 0; ii < items.Length; ii++)
 			{
 				string it = items[ii];
@@ -2568,6 +2577,7 @@ public class Game1 : Game
 				string texture = ExtractString(it, "\"texture\"");
 				int idx = ExtractInt(it, "\"idx\"");
 				int layerIdx = parentLayer;
+				int savedLayer = ExtractInt(it, "\"layer\"");
 				float offX = ExtractFloat(it, "\"localOffsetX\"");
 				float offY = ExtractFloat(it, "\"localOffsetY\"");
 				float rot = ExtractFloat(it, "\"localRotation\"");
@@ -2587,16 +2597,19 @@ public class Game1 : Game
 				Vector2 world = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy);
 				seg.loc = baseLoc + world;
 				if (!perLayer.ContainsKey(layerIdx)) perLayer[layerIdx] = new List<PrefabSpawnEntry>();
-				perLayer[layerIdx].Add(new PrefabSpawnEntry { isParent = false, order = ord, seg = seg, offX = offX, offY = offY, rot = rot, srx = srx, sry = sry });
+				perLayer[layerIdx].Add(new PrefabSpawnEntry { isParent = false, order = ord, savedLayer = savedLayer, seg = seg, offX = offX, offY = offY, rot = rot, srx = srx, sry = sry });
 			}
-			// Insert per-layer ascending at index 0 so highest order ends up on top
+			// Insert per-layer by saved sub-layer depth (desc) then intra-layer order (asc), append so later draws on top
 			foreach (var kv in perLayer)
 			{
 				int lidx = kv.Key;
-				var list = kv.Value.OrderBy(e => e.order).ToList();
+				var list = kv.Value
+					.OrderByDescending(e => (e.savedLayer >= 0 && e.savedLayer < map.layer.Length) ? map.layer[e.savedLayer].depth : 0f)
+					.ThenBy(e => e.order)
+					.ToList();
 				for (int j = 0; j < list.Count; j++)
 				{
-					map.layer[lidx].seg.Insert(0, list[j].seg);
+					map.layer[lidx].seg.Add(list[j].seg);
 				}
 			}
 			// Resolve parent index and build children refs after insertion

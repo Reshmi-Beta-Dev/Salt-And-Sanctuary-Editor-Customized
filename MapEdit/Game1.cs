@@ -2159,6 +2159,8 @@ public class Game1 : Game
 	private static bool TryGlueChild(int layer, int seg)
 	{
 		if (!glueActive || IsSameRef(layer, seg, glueParent)) return false;
+		// Only allow gluing from the currently selected layer in Prefabs mode
+		if (prefabMode && layer != selLayer) return false;
 		if (!TryGetParentSeg(out Seg parentSeg)) return false;
 		Layer childLayer = map.layer[layer];
 		if (seg < 0 || seg >= childLayer.seg.Count) return false;
@@ -2262,39 +2264,41 @@ public class Game1 : Game
 	private static void MoveActiveGroupInLayer(bool toTop)
 	{
 		if (!glueActive) return;
-		// Build per-layer lists of segment references for the group
-		Dictionary<int, List<Seg>> layerToSegs = new Dictionary<int, List<Seg>>();
-		Action<int,int> addRef = (layerIdx, segIdx) =>
+		// Build list of segment references on the selected layer only
+		int targetLayer = selLayer;
+		if (targetLayer < 0 || targetLayer >= map.layer.Length) return;
+		Layer target = map.layer[targetLayer];
+		List<Seg> block = new List<Seg>();
+		// Parent
+		if (glueParent.layerIndex == targetLayer && glueParent.segIndex >= 0 && glueParent.segIndex < target.seg.Count)
 		{
-			if (layerIdx < 0 || layerIdx >= map.layer.Length) return;
-			Layer l = map.layer[layerIdx];
-			if (segIdx < 0 || segIdx >= l.seg.Count) return;
-			if (!layerToSegs.ContainsKey(layerIdx)) layerToSegs[layerIdx] = new List<Seg>();
-			Seg s = l.seg[segIdx];
-			if (s != null && !layerToSegs[layerIdx].Contains(s)) layerToSegs[layerIdx].Add(s);
-		};
-		addRef(glueParent.layerIndex, glueParent.segIndex);
-		for (int i = 0; i < gluedChildren.Count; i++) addRef(gluedChildren[i].member.layerIndex, gluedChildren[i].member.segIndex);
-
-		foreach (var kv in layerToSegs)
+			var s = target.seg[glueParent.segIndex]; if (s != null && !block.Contains(s)) block.Add(s);
+		}
+		// Children on selected layer
+		for (int i = 0; i < gluedChildren.Count; i++)
 		{
-			int layerIdx = kv.Key;
-			Layer l = map.layer[layerIdx];
-			List<Seg> block = kv.Value; // current order
-			// Remove all block segs from the layer first
-			for (int i = l.seg.Count - 1; i >= 0; i--)
+			var m = gluedChildren[i].member;
+			if (m.layerIndex != targetLayer) continue;
+			if (m.segIndex >= 0 && m.segIndex < target.seg.Count)
 			{
-				if (block.Contains(l.seg[i])) l.seg.RemoveAt(i);
+				var s = target.seg[m.segIndex]; if (s != null && !block.Contains(s)) block.Add(s);
 			}
-			// Reinsert as a block at top or bottom preserving internal order
-			if (toTop)
-			{
-				for (int i = 0; i < block.Count; i++) l.seg.Add(block[i]);
-			}
-			else
-			{
-				for (int i = block.Count - 1; i >= 0; i--) l.seg.Insert(0, block[i]);
-			}
+		}
+		// Sort block by current indices to preserve sub-order
+		block = block.OrderBy(s => target.seg.IndexOf(s)).ToList();
+		// Remove from layer
+		for (int i = target.seg.Count - 1; i >= 0; i--)
+		{
+			if (block.Contains(target.seg[i])) target.seg.RemoveAt(i);
+		}
+		// Reinsert at top or bottom preserving internal order
+		if (toTop)
+		{
+			for (int i = 0; i < block.Count; i++) target.seg.Add(block[i]);
+		}
+		else
+		{
+			for (int i = block.Count - 1; i >= 0; i--) target.seg.Insert(0, block[i]);
 		}
 		map.sequenceMgr.UpdateAffectedSegs();
 		Program.gui.PopulateMapCells();

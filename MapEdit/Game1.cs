@@ -1154,68 +1154,62 @@ public class Game1 : Game
 			Program.gui.PopulateMapCells();
 		}
 
+		// Ctrl+Shift+Space: toggle lock state for all segments (all layers)
+		if (ctrlDown && isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Space))
+		{
+			bool anyUnlocked = false;
+			for (int l = 0; l < 20; l++)
+			{
+				Layer layer = map.layer[l];
+				for (int i = 0; i < layer.seg.Count; i++)
+				{
+					Seg s = layer.seg[i];
+					if (s == null) continue;
+					if (!s.isLocked) { anyUnlocked = true; break; }
+				}
+				if (anyUnlocked) break;
+			}
+			for (int l = 0; l < 20; l++)
+			{
+				Layer layer = map.layer[l];
+				for (int i = 0; i < layer.seg.Count; i++)
+				{
+					Seg s = layer.seg[i];
+					if (s == null) continue;
+					s.isLocked = anyUnlocked; // if any unlocked -> lock all; else unlock all
+				}
+			}
+			return;
+		}
+
 		// Space: toggle lock on selected or hovered segment
 		if (WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Space))
 		{
-			// If an object is selected, lock it but keep the layer selected for spawning
-			if (selLayer > -1 && selLayer < 20 && selSeg > -1)
-			{
-				Seg selectedSeg = map.layer[selLayer].seg[selSeg];
-				if (selectedSeg != null)
-				{
-					selectedSeg.isLocked = !selectedSeg.isLocked;
-					// Only deselect the specific segment, keep the layer selected
-					selSeg = -1;
-				}
-			}
-			// If no object is selected, lock/unlock the hovered object (include current layer)
-			else
-			{
-				int hLayer, hSeg;
-				if (TryGetHoveredSegment(out hLayer, out hSeg, true)) // Include current layer for Space key
-				{
-					map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
-				}
-			}
-		}
+			// Shift+Space disabled; if Shift is held without Ctrl, ignore; if Ctrl+Shift handled above
+			if (isShift) { return; }
+ 			// If an object is selected, lock it but keep the layer selected for spawning
+ 			if (selLayer > -1 && selLayer < 20 && selSeg > -1)
+ 			{
+ 				Seg selectedSeg = map.layer[selLayer].seg[selSeg];
+ 				if (selectedSeg != null)
+ 				{
+ 					selectedSeg.isLocked = !selectedSeg.isLocked;
+ 					// Only deselect the specific segment, keep the layer selected
+ 					selSeg = -1;
+ 				}
+ 			}
+ 			// If no object is selected, lock/unlock the hovered object (include current layer)
+ 			else
+ 			{
+ 				int hLayer, hSeg;
+ 				if (TryGetHoveredSegment(out hLayer, out hSeg, true)) // Include current layer for Space key
+ 				{
+ 					map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
+ 				}
+ 			}
+ 		}
 
-		// Shift+Up Arrow: unlock all visible segments (all layers)
-		if (isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Up))
-		{
-			for (int l = 0; l < 20; l++)
-			{
-				Layer layer = map.layer[l];
-				for (int i = 0; i < layer.seg.Count; i++)
-				{
-					Seg s = layer.seg[i];
-					if (s == null) continue;
-					Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
-					if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
-					{
-						s.isLocked = false; // Unlock all visible segments
-					}
-				}
-			}
-		}
-
-		// Shift+Down Arrow: lock all visible segments (all layers)
-		if (isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Down))
-		{
-			for (int l = 0; l < 20; l++)
-			{
-				Layer layer = map.layer[l];
-				for (int i = 0; i < layer.seg.Count; i++)
-				{
-					Seg s = layer.seg[i];
-					if (s == null) continue;
-					Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
-					if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
-					{
-						s.isLocked = true; // Lock all visible segments
-					}
-				}
-			}
-		}
+		// Shift+Arrow disabled for lock/unlock (use Shift+Space instead)
 
 		// Ctrl+/: jump to hovered segment's sheet and layer (smart selection)
 		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.OemQuestion))

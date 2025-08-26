@@ -240,6 +240,8 @@ public class Game1 : Game
 		public float sry;
 	}
 
+	private static bool lockAllLatch;
+
 	public Game1(IntPtr drawSurface)
 	{
 		graphics = new GraphicsDeviceManager(this);
@@ -1155,8 +1157,9 @@ public class Game1 : Game
 		}
 
 		// Ctrl+Shift+Space: toggle lock state for all segments (all layers)
-		if (ctrlDown && isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Space))
+		if (ctrlDown && isShift && state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.Space) && !lockAllLatch)
 		{
+			lockAllLatch = true;
 			bool anyUnlocked = false;
 			for (int l = 0; l < 20; l++)
 			{
@@ -1181,6 +1184,8 @@ public class Game1 : Game
 			}
 			return;
 		}
+		// Reset latch when Space is released
+		if (!state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.Space)) lockAllLatch = false;
 
 		// Space: toggle lock on selected or hovered segment
 		if (WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.Space))

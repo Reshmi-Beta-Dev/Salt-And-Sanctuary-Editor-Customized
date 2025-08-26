@@ -2494,36 +2494,80 @@ public class Game1 : Game
 			gd.SetRenderTarget(rt);
 			gd.Clear(Microsoft.Xna.Framework.Color.Transparent);
 			SpriteTools.BeginAlpha();
-			// Draw parent and children rough thumbnails centered
-			Vector2 center = new Vector2(tw / 2f, th / 2f);
-			Action<Seg, Microsoft.Xna.Framework.Color> drawSeg = (s, col) =>
-			{
-				try
-				{
-					var tex = textures[s.texture];
-					var cell = tex.cell[s.idx];
-					float scale = 0.2f; // rough scale for thumbnail
-					SpriteTools.sprite.Draw(tex.texture, center, cell.srcRect, col, s.rotation, cell.origin - new Vector2(cell.srcRect.X, cell.srcRect.Y), new Vector2(scale, scale), SpriteEffects.None, 1f);
-				}
-				catch { }
-			};
-			// Local copies
-			Seg pCopy = new Seg(); pCopy.CopyFrom(parent); pCopy.loc = center;
-			drawSeg(pCopy, Microsoft.Xna.Framework.Color.White);
+			// Accurate fit: compute bounds of parent + children with rotation/scaling, then fit into thumbnail
+			// Build a temporary list of segments with group-local positions
+			List<Seg> groupSegs = new List<Seg>();
+			Seg pCopy = new Seg(); pCopy.CopyFrom(parent); pCopy.loc = Vector2.Zero; groupSegs.Add(pCopy);
 			for (int i = 0; i < gluedChildren.Count; i++)
 			{
 				var gc = gluedChildren[i];
 				Seg c = new Seg();
 				int layerIdx = gc.member.layerIndex; int segIdx = gc.member.segIndex;
 				try { c.CopyFrom(map.layer[layerIdx].seg[segIdx]); } catch { continue; }
-				// compute thumbnail-space loc using saved offsets
+				// compute group-local loc using saved offsets and parent transform (no global offset)
 				float px = (float)Math.Cos(parent.rotation); float py = (float)Math.Sin(parent.rotation);
 				float qx = (float)Math.Cos(parent.rotation + 1.57079637f); float qy = (float)Math.Sin(parent.rotation + 1.57079637f);
 				Vector2 worldOffset = new Vector2(gc.localOffset.X * parent.scaling.X, gc.localOffset.Y * parent.scaling.Y);
-				Vector2 thumbnailOffset = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy) * 0.2f;
-				c.loc = center + thumbnailOffset;
-				drawSeg(c, new Microsoft.Xna.Framework.Color(1f, 1f, 1f, 0.9f));
+				Vector2 local = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy);
+				c.loc = local;
+				groupSegs.Add(c);
 			}
+			// Compute bounds by transforming sprite corners for each seg
+			float minX = float.MaxValue, minY = float.MaxValue, maxX = float.MinValue, maxY = float.MinValue;
+			for (int i = 0; i < groupSegs.Count; i++)
+			{
+				Seg s = groupSegs[i];
+				if (s == null || string.IsNullOrEmpty(s.texture) || !textures.ContainsKey(s.texture)) continue;
+				try
+				{
+					var tex = textures[s.texture];
+					var cell = tex.cell[s.idx];
+					Vector2 origin = cell.origin - new Vector2(cell.srcRect.X, cell.srcRect.Y);
+					float w = cell.srcRect.Width;
+					float h = cell.srcRect.Height;
+					// corners relative to origin
+					Vector2[] corners = new Vector2[4];
+					corners[0] = new Vector2(-origin.X, -origin.Y);
+					corners[1] = new Vector2(w - origin.X, -origin.Y);
+					corners[2] = new Vector2(-origin.X, h - origin.Y);
+					corners[3] = new Vector2(w - origin.X, h - origin.Y);
+					float cs = (float)Math.Cos(s.rotation), sn = (float)Math.Sin(s.rotation);
+					for (int k = 0; k < 4; k++)
+					{
+						Vector2 v = corners[k];
+						v.X *= s.scaling.X; v.Y *= s.scaling.Y;
+						Vector2 rtv = new Vector2(v.X * cs - v.Y * sn, v.X * sn + v.Y * cs) + s.loc;
+						if (rtv.X < minX) minX = rtv.X;
+						if (rtv.Y < minY) minY = rtv.Y;
+						if (rtv.X > maxX) maxX = rtv.X;
+						if (rtv.Y > maxY) maxY = rtv.Y;
+					}
+				}
+				catch { }
+			}
+			if (minX == float.MaxValue) { minX = -16; minY = -16; maxX = 16; maxY = 16; }
+			Vector2 boundsSize = new Vector2(Math.Max(1f, maxX - minX), Math.Max(1f, maxY - minY));
+			Vector2 boundsCenter = new Vector2((minX + maxX) / 2f, (minY + maxY) / 2f);
+			float padding = 6f;
+			float kx = (tw - padding) / boundsSize.X;
+			float ky = (th - padding) / boundsSize.Y;
+			float scaleK = Math.Max(0.01f, Math.Min(kx, ky));
+ 			Vector2 center = new Vector2(tw / 2f, th / 2f);
+ 			// Draw all segments with accurate fit and ordering (parent first, then children as in list order)
+ 			for (int i = 0; i < groupSegs.Count; i++)
+ 			{
+ 				Seg s = groupSegs[i];
+ 				if (s == null || string.IsNullOrEmpty(s.texture) || !textures.ContainsKey(s.texture)) continue;
+ 				try
+ 				{
+ 					var tex = textures[s.texture];
+ 					var cell = tex.cell[s.idx];
+ 					Vector2 drawPos = center + (s.loc - boundsCenter) * scaleK;
+ 					Vector2 drawScale = new Vector2(s.scaling.X * scaleK, s.scaling.Y * scaleK);
+ 					SpriteTools.sprite.Draw(tex.texture, drawPos, cell.srcRect, Microsoft.Xna.Framework.Color.White, s.rotation, cell.origin - new Vector2(cell.srcRect.X, cell.srcRect.Y), drawScale, SpriteEffects.None, 1f);
+ 				}
+ 				catch { }
+ 			}
 			SpriteTools.End();
 			gd.SetRenderTarget(null);
 			// Save PNG

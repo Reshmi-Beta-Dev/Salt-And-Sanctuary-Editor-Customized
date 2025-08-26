@@ -463,10 +463,26 @@ public class GUI : Form
 			}
 			else
 			{
-				// In prefab mode, render prefab thumbnails
-				trvCells.Visible = false;
+				// In prefab mode, show folders tree and render thumbnails filtered by selection
+				trvCells.Visible = true;
 				lstCells.Visible = false;
 				Game1.needsPaletteDraw = false;
+				// Position and size tree like other sheets
+				trvCells.Location = new System.Drawing.Point(txtRScript.Location.X, txtRScript.Location.Y);
+				trvCells.Size = new Size(txtRScript.Size.Width, txtRScript.Size.Height);
+				txtRScript.Visible = false;
+				BuildPrefabsTree();
+				try { trvCells.ExpandAll(); } catch {}
+				try {
+					if (trvCells.Nodes.Count > 0)
+					{
+						TreeNode root = trvCells.Nodes[0];
+						TreeNode pick = root;
+						if (root.Nodes.Count > 0) pick = root.Nodes[0];
+						trvCells.SelectedNode = pick;
+						Game1.selPaletteNode = pick;
+					}
+				} catch {}
 				try { RenderPrefabsPalette(); } catch {}
 			}
 		}
@@ -484,13 +500,23 @@ public class GUI : Form
 			pctCells.Size = new Size(280, 56);
 			return;
 		}
-		// Build list of prefab base names from JSON files
-		string[] jsons = Directory.GetFiles(dir, "*.json");
-		List<string> names = jsons.Select(p => Path.GetFileNameWithoutExtension(p)).ToList();
+		// Determine current folder filter from tree selection (default to root)
+		string filterRoot = dir;
+		try
+		{
+			if (Game1.prefabMode && trvCells.Visible && Game1.selPaletteNode != null && Game1.selPaletteNode.Tag is string t && Directory.Exists(t))
+			{
+				filterRoot = t;
+			}
+		}
+		catch { }
+		// Build list of prefab JSONs recursively under selected folder
+		string[] jsons = Directory.GetFiles(filterRoot, "*.json", SearchOption.AllDirectories);
+		List<string> jsonPaths = jsons.ToList();
 		// Grid settings: like other sheets (56x56 cells, 5 columns)
 		int columns = PrefabColumns;
 		int cellW = PrefabCellW, cellH = PrefabCellH;
-		int rows = Math.Max(1, (names.Count + columns - 1) / columns);
+		int rows = Math.Max(1, (jsonPaths.Count + columns - 1) / columns);
 		int bmpW = columns * cellW;
 		int bmpH = rows * cellH;
 		Bitmap bmp = new Bitmap(bmpW, bmpH, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
@@ -498,14 +524,17 @@ public class GUI : Form
 		{
 			// Use solid black background per request
 			g.Clear(System.Drawing.Color.Black);
-			for (int i = 0; i < names.Count; i++)
+			for (int i = 0; i < jsonPaths.Count; i++)
 			{
 				int r = i / columns;
 				int c = i % columns;
 				var rect = new System.Drawing.Rectangle(c * cellW, r * cellH, cellW, cellH);
+				string jsonPath = jsonPaths[i];
+				string baseName = Path.GetFileNameWithoutExtension(jsonPath);
+				string jsonDir = Path.GetDirectoryName(jsonPath);
 				// Map this cell to its JSON path for click handling
-				prefabThumbPaths.Add(Path.Combine(dir, names[i] + ".json"));
-				string pngPath = Path.Combine(dir, names[i] + ".png");
+				prefabThumbPaths.Add(jsonPath);
+				string pngPath = Path.Combine(jsonDir ?? filterRoot, baseName + ".png");
 				bool drawn = false;
 				if (File.Exists(pngPath))
 				{
@@ -528,7 +557,7 @@ public class GUI : Form
 				if (!drawn)
 				{
 					// Draw subtle placeholder label only (no dark fill)
-					string label = names[i];
+					string label = baseName;
 					using (var f = new System.Drawing.Font("Arial", 7.5f, System.Drawing.FontStyle.Regular))
 					{
 						g.DrawString(label, f, System.Drawing.Brushes.Gray, new System.Drawing.RectangleF(rect.X + 2, rect.Y + 20, rect.Width - 4, rect.Height - 22));
@@ -1956,6 +1985,11 @@ public class GUI : Form
 	private void trvCells_AfterSelect(object sender, TreeViewEventArgs e)
 	{
 		Game1.selPaletteNode = trvCells.SelectedNode;
+		if (Game1.prefabMode)
+		{
+			try { RenderPrefabsPalette(); } catch {}
+			return;
+		}
 		Game1.needsPaletteDraw = true;
 	}
 
@@ -2768,6 +2802,8 @@ public class GUI : Form
 		this.trvCells.TabIndex = 74;
 		this.trvCells.Visible = false;
 		this.trvCells.AfterSelect += new System.Windows.Forms.TreeViewEventHandler(trvCells_AfterSelect);
+		this.trvCells.NodeMouseClick += new System.Windows.Forms.TreeNodeMouseClickEventHandler(trvCells_NodeMouseClick);
+		this.trvCells.NodeMouseDoubleClick += new System.Windows.Forms.TreeNodeMouseClickEventHandler(trvCells_NodeMouseDoubleClick);
 		base.AutoScaleDimensions = new System.Drawing.SizeF(6f, 13f);
 		base.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
 		base.ClientSize = new System.Drawing.Size(1587, 742);
@@ -2801,5 +2837,57 @@ public class GUI : Form
 		((System.ComponentModel.ISupportInitialize)this.pctSurface).EndInit();
 		base.ResumeLayout(false);
 		base.PerformLayout();
+	}
+
+	private void BuildPrefabsTree()
+	{
+		try
+		{
+			string root = "./prefabs";
+			trvCells.BeginUpdate();
+			trvCells.Nodes.Clear();
+			TreeNode rootNode = new TreeNode("Prefabs");
+			rootNode.Tag = root;
+			trvCells.Nodes.Add(rootNode);
+			AddPrefabSubfolders(root, rootNode);
+			trvCells.EndUpdate();
+		}
+		catch { }
+	}
+	private void AddPrefabSubfolders(string folderPath, TreeNode parentNode)
+	{
+		try
+		{
+			string[] subdirs = System.IO.Directory.GetDirectories(folderPath);
+			foreach (string dir in subdirs)
+			{
+				string name = System.IO.Path.GetFileName(dir);
+				TreeNode n = new TreeNode(name);
+				n.Tag = dir;
+				parentNode.Nodes.Add(n);
+				// Recurse
+				AddPrefabSubfolders(dir, n);
+			}
+		}
+		catch { }
+	}
+
+	private void trvCells_NodeMouseClick(object sender, TreeNodeMouseClickEventArgs e)
+	{
+		if (Game1.prefabMode)
+		{
+			trvCells.SelectedNode = e.Node;
+			Game1.selPaletteNode = e.Node;
+			try { RenderPrefabsPalette(); } catch {}
+		}
+	}
+	private void trvCells_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
+	{
+		if (Game1.prefabMode)
+		{
+			trvCells.SelectedNode = e.Node;
+			Game1.selPaletteNode = e.Node;
+			try { RenderPrefabsPalette(); } catch {}
+		}
 	}
 }

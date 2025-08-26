@@ -372,6 +372,11 @@ public class Game1 : Game
 
 	private void DrawPalette()
 	{
+		// Do not use the normal texture palette rendering in Prefabs mode
+		if (prefabMode || (selTex != null && string.Equals(selTex, "Prefabs", StringComparison.OrdinalIgnoreCase)))
+		{
+			return;
+		}
 		paletteCellIdx = new List<int>();
 		base.GraphicsDevice.SetRenderTarget(paletteTarget);
 		base.GraphicsDevice.Clear(new Microsoft.Xna.Framework.Color(0.2f, 0.2f, 0.2f, 1f));

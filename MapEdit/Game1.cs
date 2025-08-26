@@ -1161,30 +1161,34 @@ public class Game1 : Game
 			Program.gui.PopulateMapCells();
 		}
 
-		// Ctrl+Shift+Space: toggle lock state for all segments (all layers)
+		// Ctrl+Shift+Space: toggle lock state for all segments (selected layer only, rendered/on-screen only)
 		if (ctrlDown && isShift && state.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.Space) && !lockAllLatch)
 		{
 			lockAllLatch = true;
+			int targetLayer = selLayer;
+			if (targetLayer < 0 || targetLayer >= 20) return;
+			Layer layerT = map.layer[targetLayer];
 			bool anyUnlocked = false;
-			for (int l = 0; l < 20; l++)
+			// First pass: detect if any rendered seg on this layer is unlocked
+			for (int i = 0; i < layerT.seg.Count; i++)
 			{
-				Layer layer = map.layer[l];
-				for (int i = 0; i < layer.seg.Count; i++)
+				Seg s = layerT.seg[i];
+				if (s == null) continue;
+				Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
+				if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
 				{
-					Seg s = layer.seg[i];
-					if (s == null) continue;
 					if (!s.isLocked) { anyUnlocked = true; break; }
 				}
-				if (anyUnlocked) break;
 			}
-			for (int l = 0; l < 20; l++)
+			// Second pass: apply to rendered segs only on the selected layer
+			for (int i = 0; i < layerT.seg.Count; i++)
 			{
-				Layer layer = map.layer[l];
-				for (int i = 0; i < layer.seg.Count; i++)
+				Seg s = layerT.seg[i];
+				if (s == null) continue;
+				Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
+				if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
 				{
-					Seg s = layer.seg[i];
-					if (s == null) continue;
-					s.isLocked = anyUnlocked; // if any unlocked -> lock all; else unlock all
+					s.isLocked = anyUnlocked; // if any unlocked -> lock rendered segs; else unlock rendered segs
 				}
 			}
 			return;

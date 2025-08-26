@@ -532,6 +532,7 @@ public class GUI : Form
 				string jsonPath = jsonPaths[i];
 				string baseName = Path.GetFileNameWithoutExtension(jsonPath);
 				string jsonDir = Path.GetDirectoryName(jsonPath);
+				string displayName = ReadPrefabDisplayName(jsonPath, baseName);
 				// Map this cell to its JSON path for click handling
 				prefabThumbPaths.Add(jsonPath);
 				string pngPath = Path.Combine(jsonDir ?? filterRoot, baseName + ".png");
@@ -554,14 +555,12 @@ public class GUI : Form
 					}
 					catch { drawn = false; }
 				}
-				if (!drawn)
+				// Draw name text under the tile (for both with/without thumbnail)
+				using (var f = new System.Drawing.Font("Arial", 7.0f, System.Drawing.FontStyle.Regular))
 				{
-					// Draw subtle placeholder label only (no dark fill)
-					string label = baseName;
-					using (var f = new System.Drawing.Font("Arial", 7.5f, System.Drawing.FontStyle.Regular))
-					{
-						g.DrawString(label, f, System.Drawing.Brushes.Gray, new System.Drawing.RectangleF(rect.X + 2, rect.Y + 20, rect.Width - 4, rect.Height - 22));
-					}
+					var textRect = new System.Drawing.RectangleF(rect.X + 2, rect.Bottom - 14, rect.Width - 4, 12);
+					g.DrawString(displayName, f, System.Drawing.Brushes.Black, new System.Drawing.RectangleF(textRect.X + 1, textRect.Y + 1, textRect.Width, textRect.Height));
+					g.DrawString(displayName, f, System.Drawing.Brushes.White, textRect);
 				}
 				using (var pen = new Pen(System.Drawing.Color.FromArgb(60, 200, 200, 200))) g.DrawRectangle(pen, rect);
 			}
@@ -570,6 +569,26 @@ public class GUI : Form
 		pctCells.Visible = true;
 		pctCells.Image = bmp;
 		pctCells.Size = new Size(bmpW, bmpH);
+	}
+
+	private string ReadPrefabDisplayName(string jsonPath, string fallback)
+	{
+		try
+		{
+			string txt = File.ReadAllText(jsonPath);
+			int ni = txt.IndexOf("\"name\"");
+			if (ni >= 0)
+			{
+				int q1 = txt.IndexOf('"', ni + 6); if (q1 >= 0) { int q2 = txt.IndexOf('"', q1 + 1); if (q2 > q1) { string val = txt.Substring(q1 + 1, q2 - q1 - 1); if (!string.IsNullOrWhiteSpace(val)) return val; } }
+			}
+			int ti = txt.IndexOf("\"title\"");
+			if (ti >= 0)
+			{
+				int q1 = txt.IndexOf('"', ti + 7); if (q1 >= 0) { int q2 = txt.IndexOf('"', q1 + 1); if (q2 > q1) { string val = txt.Substring(q1 + 1, q2 - q1 - 1); if (!string.IsNullOrWhiteSpace(val)) return val; } }
+			}
+		}
+		catch { }
+		return fallback;
 	}
 
 	private void lstCells_SelectedIndexChanged(object sender, EventArgs e)

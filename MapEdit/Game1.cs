@@ -1239,6 +1239,16 @@ public class Game1 : Game
 			}
 		}
 
+		// Shift+G: unglue hovered child (only in prefab mode)
+		if (prefabMode && isShift && !ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
+		{
+			if (glueActive)
+			{
+				TryUnglueHoveredChildStatic();
+			}
+			return;
+		}
+
 		// G: glue – only in prefab mode; first press sets parent from selected; then glue hovered as child (ignore Ctrl+G)
 		if (prefabMode && !ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
 		{
@@ -1515,6 +1525,41 @@ public class Game1 : Game
 		{
 			return default(Microsoft.Xna.Framework.Rectangle);
 		}
+	}
+
+	// Static helper for hit-testing without needing an instance of Game1/GUI
+	private static Microsoft.Xna.Framework.Rectangle GetSegRectStatic(Seg seg, int layer)
+	{
+		// Reuse instance method if possible via a heuristic: Program.gui may not have instance of Game1
+		// Implement minimal duplicate of GetSegRect logic used for hit-tests
+		if (layer == 19)
+		{
+			return new Microsoft.Xna.Framework.Rectangle((int)seg.loc.X - 60, (int)seg.loc.Y - 200, 120, 200);
+		}
+		Vector2 loc = seg.loc;
+		try
+		{
+			XSprite xSprite = textures[seg.texture].cell[seg.idx];
+			Vector2 vA = new Vector2((float)Math.Cos(seg.rotation) * ((float)xSprite.srcRect.Right - xSprite.origin.X) * seg.scaling.X, (float)Math.Sin(seg.rotation) * ((float)xSprite.srcRect.Right - xSprite.origin.X) * seg.scaling.X);
+			Vector2 vB = new Vector2((float)Math.Cos((double)seg.rotation + 1.57000005245209) * ((float)xSprite.srcRect.Bottom - xSprite.origin.Y) * seg.scaling.Y, (float)Math.Sin((double)seg.rotation + 1.57000005245209) * ((float)xSprite.srcRect.Bottom - xSprite.origin.Y) * seg.scaling.Y);
+			Vector2 vC = new Vector2((float)Math.Cos(seg.rotation) * (xSprite.origin.X - (float)xSprite.srcRect.X) * seg.scaling.X, (float)Math.Sin(seg.rotation) * (xSprite.origin.X - (float)xSprite.srcRect.X) * seg.scaling.X);
+			Vector2 vD = new Vector2((float)Math.Cos((double)seg.rotation + 1.57000005245209) * (xSprite.origin.Y - (float)xSprite.srcRect.Y) * seg.scaling.Y, (float)Math.Sin((double)seg.rotation + 1.57000005245209) * (xSprite.origin.Y - (float)xSprite.srcRect.Y) * seg.scaling.Y);
+			Vector2 p1 = loc - vC - vD;
+			Vector2 p2 = loc + vA - vD;
+			Vector2 p3 = loc - vC + vB;
+			Vector2 p4 = loc + vA + vB;
+			Vector2 min = loc, max = loc;
+			if (p2.X < min.X) min.X = p2.X; if (p2.Y < min.Y) min.Y = p2.Y;
+			if (p3.X < min.X) min.X = p3.X; if (p3.Y < min.Y) min.Y = p3.Y;
+			if (p4.X < min.X) min.X = p4.X; if (p4.Y < min.Y) min.Y = p4.Y;
+			if (p1.X < min.X) min.X = p1.X; if (p1.Y < min.Y) min.Y = p1.Y;
+			if (p2.X > max.X) max.X = p2.X; if (p2.Y > max.Y) max.Y = p2.Y;
+			if (p3.X > max.X) max.X = p3.X; if (p3.Y > max.Y) max.Y = p3.Y;
+			if (p4.X > max.X) max.X = p4.X; if (p4.Y > max.Y) max.Y = p4.Y;
+			if (p1.X > max.X) max.X = p1.X; if (p1.Y > max.Y) max.Y = p1.Y;
+			return new Microsoft.Xna.Framework.Rectangle((int)min.X, (int)min.Y, (int)((double)max.X - (double)min.X), (int)((double)max.Y - (double)min.Y));
+		}
+		catch { return default(Microsoft.Xna.Framework.Rectangle); }
 	}
 
 	protected override void Draw(GameTime gameTime)
@@ -2742,6 +2787,69 @@ public class Game1 : Game
 		string num = src.Substring(end, e - end);
 		float.TryParse(num, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val);
 		return val;
+	}
+
+
+
+	private static void TryUnglueHoveredChildStatic()
+	{
+		try
+		{
+			if (!glueActive) return;
+			Vector2 m = MVec();
+			bool hasBest = false; GroupMemberRef best = default(GroupMemberRef); int bestSegIdx = int.MinValue;
+			// Parent (do not remove but allow hit to prefer children later)
+			var pr = glueParent;
+			if (pr.layerIndex >= 0 && pr.layerIndex < map.layer.Length && pr.segIndex >= 0 && pr.segIndex < map.layer[pr.layerIndex].seg.Count)
+			{
+				Seg ps = map.layer[pr.layerIndex].seg[pr.segIndex];
+				if (ps != null)
+				{
+					var rect = GetSegRectStatic(ps, pr.layerIndex);
+					Vector2 rl = ScrollManager.GetRealLoc(m, ps.depth);
+					if ((double)rl.X > rect.Left && (double)rl.Y > rect.Top && (double)rl.X < rect.Right && (double)rl.Y < rect.Bottom)
+					{
+						hasBest = true; best = pr; bestSegIdx = pr.segIndex;
+					}
+				}
+			}
+			// Children
+			for (int i = 0; i < gluedChildren.Count; i++)
+			{
+				var r = gluedChildren[i].member;
+				if (r.layerIndex < 0 || r.layerIndex >= map.layer.Length) continue;
+				Layer l = map.layer[r.layerIndex]; if (r.segIndex < 0 || r.segIndex >= l.seg.Count) continue;
+				Seg s = l.seg[r.segIndex]; if (s == null) continue;
+				var rect = GetSegRectStatic(s, r.layerIndex);
+				Vector2 rl = ScrollManager.GetRealLoc(m, s.depth);
+				if ((double)rl.X > rect.Left && (double)rl.Y > rect.Top && (double)rl.X < rect.Right && (double)rl.Y < rect.Bottom)
+				{
+					if (!hasBest || r.segIndex >= bestSegIdx)
+					{
+						hasBest = true; best = r; bestSegIdx = r.segIndex;
+					}
+				}
+			}
+			if (!hasBest) return;
+			// Do not remove parent, only children
+			if (best.layerIndex == glueParent.layerIndex && best.segIndex == glueParent.segIndex)
+			{
+				Program.gui.ConsoleWriteLine("Hover is on parent; not removed.");
+				return;
+			}
+			for (int i = 0; i < gluedChildren.Count; i++)
+			{
+				var r = gluedChildren[i].member;
+				if (r.layerIndex == best.layerIndex && r.segIndex == best.segIndex)
+				{
+					gluedChildren.RemoveAt(i);
+					parentTransformChanged = true; RecomputeChildrenFromParent();
+					Program.gui.ConsoleWriteLine("Removed child from group.");
+					return;
+				}
+			}
+		}
+		catch { }
 	}
 }
 

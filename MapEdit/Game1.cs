@@ -2149,6 +2149,9 @@ public class Game1 : Game
 		gluedChildren.Clear();
 		glueParent = default(GroupMemberRef);
 		parentTransformChanged = false;
+		// Also clear selection so further scaling/edits don't affect the dropped group
+		selSeg = -1;
+		try { Program.gui.UpdateSelSeg(); } catch { }
 	}
 
 	private static bool IsSameRef(int layer, int seg, GroupMemberRef r)

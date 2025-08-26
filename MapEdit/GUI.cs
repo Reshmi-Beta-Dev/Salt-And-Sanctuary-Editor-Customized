@@ -441,7 +441,13 @@ public class GUI : Form
 			}
 			Game1.selTex = (string)lstSheets.Items[lstSheets.SelectedIndex];
 			// Enable prefab mode only when the "Prefabs" sheet is selected
-			Game1.prefabMode = string.Equals(Game1.selTex, "Prefabs", StringComparison.OrdinalIgnoreCase);
+			bool switchingToPrefabs = string.Equals(Game1.selTex, "Prefabs", StringComparison.OrdinalIgnoreCase);
+			if (!switchingToPrefabs && Game1.prefabMode)
+			{
+				// Leaving Prefabs: drop any active glue and clear selection
+				try { typeof(Game1).GetMethod("UnglueAll", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).Invoke(null, null); } catch {}
+			}
+			Game1.prefabMode = switchingToPrefabs;
 			if (!Game1.prefabMode)
 			{
 				UpdateCellTree();

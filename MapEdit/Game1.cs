@@ -1239,8 +1239,8 @@ public class Game1 : Game
 			}
 		}
 
-		// Shift+G: unglue hovered child (only in prefab mode)
-		if (prefabMode && isShift && !ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
+		// H: unglue hovered child (only in prefab mode)
+		if (prefabMode && !ctrlDown && !isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.H))
 		{
 			if (glueActive)
 			{

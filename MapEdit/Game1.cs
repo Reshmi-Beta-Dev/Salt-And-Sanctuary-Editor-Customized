@@ -54,6 +54,10 @@ public class Game1 : Game
 
 	private float gZoom = -10f;
 
+	// Duplicate cooldown to prevent accidental repeated duplicates (Ctrl+D/Ctrl+Click)
+	private static System.DateTime lastDuplicateTimeUtc = System.DateTime.MinValue;
+	private const int duplicateCooldownMs = 180;
+
 	private GraphicsDeviceManager graphics;
 
 	public const int FILTER_ALL = 0;
@@ -967,11 +971,8 @@ public class Game1 : Game
 						Vector2 realLoc5 = ScrollManager.GetRealLoc(vector, seg3.depth);
 						if ((double)realLoc5.X > (double)segRect.Left && (double)realLoc5.Y > (double)segRect.Top && (double)realLoc5.X < (double)segRect.Right && (double)realLoc5.Y < (double)segRect.Bottom)
 						{
-							// In Prefabs mode with an active group, prevent selecting group members
-							if (prefabMode && glueActive && IsInActiveGroup(selLayer, num21))
-							{
-								// Skip selection
-							}
+							// In Prefabs mode with an active group, avoid changing selection to a grouped member
+							if (prefabMode && glueActive && IsInActiveGroup(selLayer, num21)) { }
 							else if (!seg3.isLocked)
 							{
 								selSeg = num21;
@@ -985,16 +986,32 @@ public class Game1 : Game
 				}
 				else if (flag && !recordSequenceMode)
 				{
-					Seg seg4 = new Seg();
-					seg4.CopyFrom(layer.seg[selSeg]);
-					layer.seg.Add(seg4);
-					selSeg = layer.seg.Count - 1;
-					Program.gui.PopulateMapCells();
-					Program.gui.UpdateSelSeg();
-					preState = mouseState;
-					map.mapGrid.needsUpdate = true;
-					needsActorUpdate = true;
-					return;
+					// In Prefabs mode, route Ctrl+Click to safe group duplicate/un-group
+					if (prefabMode && glueActive)
+					{
+						var now = System.DateTime.UtcNow;
+						if ((now - lastDuplicateTimeUtc).TotalMilliseconds >= duplicateCooldownMs)
+						{
+							lastDuplicateTimeUtc = now;
+							DuplicateCurrentSelection();
+						}
+						preState = mouseState;
+						return;
+					}
+					// Otherwise, duplicate only if a valid selection exists
+					if (selSeg > -1 && selSeg < layer.seg.Count)
+					{
+						Seg seg4 = new Seg();
+						seg4.CopyFrom(layer.seg[selSeg]);
+						layer.seg.Add(seg4);
+						selSeg = layer.seg.Count - 1;
+						Program.gui.PopulateMapCells();
+						Program.gui.UpdateSelSeg();
+						preState = mouseState;
+						map.mapGrid.needsUpdate = true;
+						needsActorUpdate = true;
+						return;
+					}
 				}
 			}
 			if (preState.MiddleButton == Microsoft.Xna.Framework.Input.ButtonState.Released && mouseState.MiddleButton == Microsoft.Xna.Framework.Input.ButtonState.Pressed)
@@ -1239,6 +1256,16 @@ public class Game1 : Game
 			}
 		}
 
+		// Shift+G: grab-all on active layer (only in prefab mode; requires parent set)
+		if (prefabMode && isShift && !ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
+		{
+			if (glueActive && TryGetParentSeg(out Seg _))
+			{
+				GrabAllChildrenOnActiveLayer();
+			}
+			return;
+		}
+
 		// H: unglue hovered child (only in prefab mode)
 		if (prefabMode && !ctrlDown && !isShift && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.H))
 		{
@@ -1249,9 +1276,23 @@ public class Game1 : Game
 			return;
 		}
 
-		// G: glue – only in prefab mode; first press sets parent from selected; then glue hovered as child (ignore Ctrl+G)
-		if (prefabMode && !ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
+		// G: glue – auto-switch to prefab mode if not already active; first press sets parent from selected; then glue hovered as child (ignore Ctrl+G)
+		if (!ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.G))
 		{
+			// Auto-switch to Prefabs tab if not in prefab mode
+			if (!prefabMode)
+			{
+				try
+				{
+					Program.gui.Invoke(new System.Action(() =>
+					{
+						Program.gui.SwitchToPrefabsTab();
+					}));
+				}
+				catch { }
+				return; // Let the sheet change activate prefab mode, then G will work on next press
+			}
+
 			if (!glueActive)
 			{
 				if (selLayer > -1 && selLayer < 20 && selSeg > -1 && selSeg < map.layer[selLayer].seg.Count)
@@ -1262,7 +1303,8 @@ public class Game1 : Game
 			else
 			{
 				int hLayer, hSeg;
-				if (TryGetHoveredSegment(out hLayer, out hSeg, true))
+				// For glue child, include current layer and do not skip active-group members
+				if (TryGetHoveredSegmentForGlue(out hLayer, out hSeg))
 				{
 					TryGlueChild(hLayer, hSeg);
 				}
@@ -1320,6 +1362,19 @@ public class Game1 : Game
 			{
 				try { SaveActivePrefab(); Program.gui.ConsoleWriteLine("Prefab saved to ./prefabs/"); } catch {}
 			}
+		}
+
+		// Ctrl+D: duplicate current selection. If a group is active, duplicate its members on the active layer, then unglue
+		if (ctrlDown && WasKeyJustPressed(pressedKeys, pressedKeys2, Microsoft.Xna.Framework.Input.Keys.D))
+		{
+			// Debounce duplicates
+			var now = System.DateTime.UtcNow;
+			if ((now - lastDuplicateTimeUtc).TotalMilliseconds >= duplicateCooldownMs)
+			{
+				lastDuplicateTimeUtc = now;
+				DuplicateCurrentSelection();
+			}
+			return;
 		}
 
 		oldKeyState = state;
@@ -1393,6 +1448,57 @@ public class Game1 : Game
 			}
 		}
 		return false;
+	}
+
+	// Hover helper tailored for gluing: includes current layer and does NOT skip active group members
+	private bool TryGetHoveredSegmentForGlue(out int hoveredLayer, out int hoveredSeg)
+	{
+		hoveredLayer = -1;
+		hoveredSeg = -1;
+		int l = selLayer;
+		if (l < 0 || l >= 20) return false;
+		Layer layerData = map.layer[l];
+		Vector2 m = MVec();
+		for (int i = layerData.seg.Count - 1; i >= 0; i--)
+		{
+			Seg s = layerData.seg[i];
+			if (s == null) continue;
+			// Skip already grouped (parent or children) so glue targets new members
+			if (prefabMode && glueActive && IsInActiveGroup(l, i)) continue;
+			var rect = GetSegRect(s, l);
+			Vector2 rl = ScrollManager.GetRealLoc(m, s.depth);
+			if ((double)rl.X > (double)rect.Left && (double)rl.Y > (double)rect.Top && (double)rl.X < (double)rect.Right && (double)rl.Y < (double)rect.Bottom)
+			{
+				hoveredLayer = l;
+				hoveredSeg = i;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Add all intersecting segments on the active layer as children (excluding parent, existing children, and locked)
+	private void GrabAllChildrenOnActiveLayer()
+	{
+		if (!glueActive) return;
+		int l = selLayer;
+		if (l < 0 || l >= 20) return;
+		if (!TryGetParentSeg(out Seg parent)) return;
+		Layer layerData = map.layer[l];
+		int added = 0;
+		// Grab all rendered (on-screen) segments on the active layer, excluding parent/children
+		for (int i = 0; i < layerData.seg.Count; i++)
+		{
+			if (IsInActiveGroup(l, i)) continue; // skip parent and current children
+			Seg s = layerData.seg[i];
+			if (s == null) continue;
+			Vector2 scr = ScrollManager.GetScreenLoc(s.loc, s.depth);
+			if ((double)scr.X > -100.0 && (double)scr.X < (double)ScrollManager.screenSize.X + 100.0 && (double)scr.Y > -100.0 && (double)scr.Y < (double)ScrollManager.screenSize.Y + 100.0)
+			{
+				if (TryGlueChild(l, i)) added++;
+			}
+		}
+		try { Program.gui.ConsoleWriteLine(added > 0 ? $"Grabbed {added} children on layer {l}." : "No additional children grabbed."); } catch { }
 	}
 	
 	private bool IsLayerInCurrentEnvironment(int l)
@@ -2216,8 +2322,6 @@ public class Game1 : Game
 	private static bool TryGlueChild(int layer, int seg)
 	{
 		if (!glueActive || IsSameRef(layer, seg, glueParent)) return false;
-		// Only allow gluing from the currently selected layer in Prefabs mode
-		if (prefabMode && layer != selLayer) return false;
 		if (!TryGetParentSeg(out Seg parentSeg)) return false;
 		Layer childLayer = map.layer[layer];
 		if (seg < 0 || seg >= childLayer.seg.Count) return false;
@@ -2257,8 +2361,7 @@ public class Game1 : Game
 				localRotation = localRot,
 				scaleRatio = ratio
 			});
-			parentTransformChanged = true;
-			RecomputeChildrenFromParent();
+			// Do not recompute immediately; preserve exact current world pose (zero visual shift)
 			return true;
 		}
 		return false;
@@ -2283,12 +2386,13 @@ public class Game1 : Game
 			Seg child = l.seg[gc.member.segIndex];
 			if (child == null) continue;
 
+			// Build world offset by scaling along parent's local axes, then rotating
+			float sx = gc.localOffset.X * parentSeg.scaling.X;
+			float sy = gc.localOffset.Y * parentSeg.scaling.Y;
 			Vector2 offsetWorld = new Vector2(
-				gc.localOffset.X * px + gc.localOffset.Y * qx,
-				gc.localOffset.X * py + gc.localOffset.Y * qy
+				sx * px + sy * qx,
+				sx * py + sy * qy
 			);
-			// Apply parent scale to offsets
-			offsetWorld *= new Vector2(parentSeg.scaling.X, parentSeg.scaling.Y);
 
 			child.loc = parentSeg.loc + offsetWorld;
 			child.rotation = WrapAngle(parentSeg.rotation + gc.localRotation);
@@ -2316,6 +2420,123 @@ public class Game1 : Game
 		float min = 0.05f, max = 10f;
 		s.scaling.X = Math.Min(max, Math.Max(min, s.scaling.X));
 		s.scaling.Y = Math.Min(max, Math.Max(min, s.scaling.Y));
+	}
+
+	private void DuplicateCurrentSelection()
+	{
+		try
+		{
+			if (glueActive && TryGetParentSeg(out Seg parent))
+			{
+				// Capture parent and children info before we unglue
+				int originalParentLayer = glueParent.layerIndex;
+				Seg originalParentRef = null;
+				if (originalParentLayer >= 0 && originalParentLayer < map.layer.Length && glueParent.segIndex >= 0 && glueParent.segIndex < map.layer[originalParentLayer].seg.Count)
+				{
+					originalParentRef = map.layer[originalParentLayer].seg[glueParent.segIndex];
+				}
+				var originalChildren = new List<OriginalChildInfo>();
+				for (int i = 0; i < gluedChildren.Count; i++)
+				{
+					var m = gluedChildren[i].member;
+					if (m.layerIndex < 0 || m.layerIndex >= map.layer.Length) continue;
+					Layer cl = map.layer[m.layerIndex];
+					if (m.segIndex < 0 || m.segIndex >= cl.seg.Count) continue;
+					Seg s = cl.seg[m.segIndex];
+					if (s != null)
+					{
+						originalChildren.Add(new OriginalChildInfo { layer = m.layerIndex, segRef = s, off = gluedChildren[i].localOffset, rot = gluedChildren[i].localRotation, ratio = gluedChildren[i].scaleRatio });
+					}
+				}
+				// Duplicate each member and keep a map from original seg to its duplicate
+				var dupMap = new Dictionary<Seg, Seg>();
+				int duplicated = 0;
+				// Duplicate parent first (if exists)
+				if (originalParentRef != null)
+				{
+					Layer Lp = map.layer[originalParentLayer];
+					int idxp = Lp.seg.IndexOf(originalParentRef);
+					if (idxp >= 0)
+					{
+						Seg copyP = new Seg();
+						copyP.CopyFrom(originalParentRef);
+						Lp.seg.Insert(Math.Min(idxp + 1, Lp.seg.Count), copyP);
+						dupMap[originalParentRef] = copyP;
+						duplicated++;
+					}
+				}
+				// Duplicate children
+				for (int i = 0; i < originalChildren.Count; i++)
+				{
+					int layerIdx = originalChildren[i].layer;
+					Seg refSeg = originalChildren[i].segRef;
+					Layer L = map.layer[layerIdx];
+					int idx = L.seg.IndexOf(refSeg);
+					if (idx < 0) continue;
+					Seg copy = new Seg();
+					copy.CopyFrom(refSeg);
+					L.seg.Insert(Math.Min(idx + 1, L.seg.Count), copy);
+					dupMap[refSeg] = copy;
+					duplicated++;
+				}
+				// Unglue the original group only
+				UnglueAll();
+				// Activate a new glue group on the duplicated members so the duplicate stays grouped
+				if (originalParentRef != null && dupMap.ContainsKey(originalParentRef))
+				{
+					Seg dupParent = dupMap[originalParentRef];
+					int dupParentLayer = originalParentLayer;
+					int dupParentIndex = map.layer[dupParentLayer].seg.IndexOf(dupParent);
+					glueActive = true;
+					glueParent = new GroupMemberRef { layerIndex = dupParentLayer, segIndex = dupParentIndex };
+					gluedChildren.Clear();
+					for (int i = 0; i < originalChildren.Count; i++)
+					{
+						OriginalChildInfo oc = originalChildren[i];
+						if (!dupMap.ContainsKey(oc.segRef)) continue;
+						Seg dupChild = dupMap[oc.segRef];
+						int dupChildIndex = map.layer[oc.layer].seg.IndexOf(dupChild);
+						if (dupChildIndex < 0) continue;
+						gluedChildren.Add(new GluedChild
+						{
+							member = new GroupMemberRef { layerIndex = oc.layer, segIndex = dupChildIndex },
+							localOffset = oc.off,
+							localRotation = oc.rot,
+							scaleRatio = oc.ratio
+						});
+					}
+					parentTransformChanged = false; // keep current world pose
+				}
+				map.mapGrid.needsUpdate = true;
+				needsActorUpdate = true;
+				try { Program.gui.ConsoleWriteLine(duplicated > 0 ? "Duplicated group; original ungrouped; duplicate stays grouped." : "No members duplicated."); } catch { }
+				return;
+			}
+			// Fallback: duplicate a single selected segment
+			if (selLayer > -1 && selLayer < 20 && selSeg > -1)
+			{
+				Seg src = map.layer[selLayer].seg[selSeg];
+				if (src != null)
+				{
+					Seg copy = new Seg();
+					copy.CopyFrom(src);
+					map.layer[selLayer].seg.Insert(selSeg + 1, copy);
+					map.mapGrid.needsUpdate = true;
+					needsActorUpdate = true;
+					try { Program.gui.ConsoleWriteLine("Duplicated segment."); } catch { }
+				}
+			}
+		}
+		catch { }
+	}
+
+	private struct OriginalChildInfo
+	{
+		public int layer;
+		public Seg segRef;
+		public Vector2 off;
+		public float rot;
+		public Vector2 ratio;
 	}
 
 	private static void MoveActiveGroupInLayer(bool toTop)
@@ -2374,6 +2595,25 @@ public class Game1 : Game
 		}
 		map.sequenceMgr.UpdateAffectedSegs();
 		Program.gui.PopulateMapCells();
+	}
+
+	public static void RemapGlueAfterSwap(int layer, int i, int j)
+	{
+		if (!glueActive) return;
+		// Update parent index if it's on this layer
+		if (glueParent.layerIndex == layer)
+		{
+			if (glueParent.segIndex == i) glueParent = new GroupMemberRef { layerIndex = layer, segIndex = j };
+			else if (glueParent.segIndex == j) glueParent = new GroupMemberRef { layerIndex = layer, segIndex = i };
+		}
+		// Update children indices on this layer
+		for (int c = 0; c < gluedChildren.Count; c++)
+		{
+			var m = gluedChildren[c].member;
+			if (m.layerIndex != layer) continue;
+			if (m.segIndex == i) gluedChildren[c].member = new GroupMemberRef { layerIndex = layer, segIndex = j };
+			else if (m.segIndex == j) gluedChildren[c].member = new GroupMemberRef { layerIndex = layer, segIndex = i };
+		}
 	}
 
 	private static void DeleteActiveGroup()
@@ -2851,5 +3091,6 @@ public class Game1 : Game
 		}
 		catch { }
 	}
+
 }
 

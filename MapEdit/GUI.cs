@@ -317,6 +317,14 @@ public class GUI : Form
 		txtConsole.AppendText("\r\n" + s);
 	}
 
+	public void SwitchToPrefabsTab()
+	{
+		if (lstSheets.Items.Contains("Prefabs"))
+		{
+			lstSheets.SelectedItem = "Prefabs";
+		}
+	}
+
 	private void GUI_Load(object sender, EventArgs e)
 	{
 		allToolStripMenuItem.Checked = true;
@@ -1018,16 +1026,34 @@ public class GUI : Form
 			return;
 		}
 		Layer layer = Game1.map.layer[Game1.selLayer];
-		if (layer.seg[i] == null || layer.seg[j] == null || i < 0 || j > layer.seg.Count - 1)
+		// Validate indices BEFORE indexing into the list to avoid ArgumentOutOfRangeException
+		if (i < 0 || j < 0 || i >= layer.seg.Count || j >= layer.seg.Count)
+		{
+			return;
+		}
+		if (layer.seg[i] == null || layer.seg[j] == null)
 		{
 			return;
 		}
 		try
 		{
-			Seg seg = new Seg();
-			seg.CopyFrom(layer.seg[i]);
-			layer.seg[i].CopyFrom(layer.seg[j]);
-			layer.seg[j].CopyFrom(seg);
+			if (Game1.prefabMode)
+			{
+				// Prefabs mode: swap by reference to preserve identity and keep glue refs valid
+				Seg tmp = layer.seg[i];
+				layer.seg[i] = layer.seg[j];
+				layer.seg[j] = tmp;
+				// Remap glue indices for active group if needed
+				try { Game1.RemapGlueAfterSwap(Game1.selLayer, i, j); } catch {}
+			}
+			else
+			{
+				// Non-prefab mode: preserve legacy behavior by copying data
+				Seg seg = new Seg();
+				seg.CopyFrom(layer.seg[i]);
+				layer.seg[i].CopyFrom(layer.seg[j]);
+				layer.seg[j].CopyFrom(seg);
+			}
 			Game1.map.sequenceMgr.Swap(Game1.selLayer, i, j);
 			if (lstMapCells.Enabled)
 			{
@@ -2141,6 +2167,13 @@ public class GUI : Form
 			return;
 		}
 		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// In Prefabs mode, move the entire active group to back on this layer
+		if (Game1.prefabMode && Game1.HasActiveGlueGroup())
+		{
+			// Use existing group move by edge: false => to back
+			try { typeof(Game1).GetMethod("MoveActiveGroupInLayer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).Invoke(null, new object[] { false }); } catch { }
+			return;
+		}
 		while (Game1.selSeg > 0)
 		{
 			SwapSegs(Game1.selSeg, Game1.selSeg - 1);
@@ -2161,6 +2194,12 @@ public class GUI : Form
 		_ = lstMapCells.Items.Count;
 		int count = Game1.map.layer[Game1.selLayer].seg.Count;
 		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// In Prefabs mode, move the entire active group to front on this layer
+		if (Game1.prefabMode && Game1.HasActiveGlueGroup())
+		{
+			try { typeof(Game1).GetMethod("MoveActiveGroupInLayer", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).Invoke(null, new object[] { true }); } catch { }
+			return;
+		}
 		while (Game1.selSeg < count - 1)
 		{
 			SwapSegs(Game1.selSeg, Game1.selSeg + 1);

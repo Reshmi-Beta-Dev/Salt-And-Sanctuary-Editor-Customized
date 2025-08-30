@@ -1000,17 +1000,17 @@ public class Game1 : Game
 					}
 					// Otherwise, duplicate only if a valid selection exists
 					if (selSeg > -1 && selSeg < layer.seg.Count)
-					{
-						Seg seg4 = new Seg();
-						seg4.CopyFrom(layer.seg[selSeg]);
-						layer.seg.Add(seg4);
-						selSeg = layer.seg.Count - 1;
-						Program.gui.PopulateMapCells();
-						Program.gui.UpdateSelSeg();
-						preState = mouseState;
-						map.mapGrid.needsUpdate = true;
-						needsActorUpdate = true;
-						return;
+				{
+					Seg seg4 = new Seg();
+					seg4.CopyFrom(layer.seg[selSeg]);
+					layer.seg.Add(seg4);
+					selSeg = layer.seg.Count - 1;
+					Program.gui.PopulateMapCells();
+					Program.gui.UpdateSelSeg();
+					preState = mouseState;
+					map.mapGrid.needsUpdate = true;
+					needsActorUpdate = true;
+					return;
 					}
 				}
 			}
@@ -1218,27 +1218,27 @@ public class Game1 : Game
 		{
 			// Shift+Space disabled; if Shift is held without Ctrl, ignore; if Ctrl+Shift handled above
 			if (isShift) { return; }
- 			// If an object is selected, lock it but keep the layer selected for spawning
- 			if (selLayer > -1 && selLayer < 20 && selSeg > -1)
- 			{
- 				Seg selectedSeg = map.layer[selLayer].seg[selSeg];
- 				if (selectedSeg != null)
- 				{
- 					selectedSeg.isLocked = !selectedSeg.isLocked;
- 					// Only deselect the specific segment, keep the layer selected
- 					selSeg = -1;
- 				}
- 			}
- 			// If no object is selected, lock/unlock the hovered object (include current layer)
- 			else
- 			{
- 				int hLayer, hSeg;
- 				if (TryGetHoveredSegment(out hLayer, out hSeg, true)) // Include current layer for Space key
- 				{
- 					map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
- 				}
- 			}
- 		}
+			// If an object is selected, lock it but keep the layer selected for spawning
+			if (selLayer > -1 && selLayer < 20 && selSeg > -1)
+			{
+				Seg selectedSeg = map.layer[selLayer].seg[selSeg];
+				if (selectedSeg != null)
+				{
+					selectedSeg.isLocked = !selectedSeg.isLocked;
+					// Only deselect the specific segment, keep the layer selected
+					selSeg = -1;
+				}
+			}
+			// If no object is selected, lock/unlock the hovered object (include current layer)
+			else
+			{
+				int hLayer, hSeg;
+				if (TryGetHoveredSegment(out hLayer, out hSeg, true)) // Include current layer for Space key
+				{
+					map.layer[hLayer].seg[hSeg].isLocked = !map.layer[hLayer].seg[hSeg].isLocked;
+				}
+			}
+		}
 
 		// Shift+Arrow disabled for lock/unlock (use Shift+Space instead)
 
@@ -1518,7 +1518,11 @@ public class Game1 : Game
 
 	public static void SwapSegs(int i, int j)
 	{
+		// Only update sequence manager when NOT in prefab mode to avoid corrupting sequences
+		if (!prefabMode)
+	{
 		map.sequenceMgr.UpdateAffectedSegs();
+		}
 		try
 		{
 			if (selLayer > -1 && selLayer < 3)
@@ -1532,7 +1536,11 @@ public class Game1 : Game
 					seg.CopyFrom(seg2);
 					seg2.CopyFrom(seg3);
 					selSeg = j;
+					// Only call sequence manager swap when NOT in prefab mode to avoid corrupting sequences
+					if (!prefabMode)
+					{
 					map.sequenceMgr.Swap(selLayer, i, j);
+					}
 				}
 			}
 		}
@@ -2542,9 +2550,20 @@ public class Game1 : Game
 	private static void MoveActiveGroupInLayer(bool toTop)
 	{
 		if (!glueActive) return;
+		
+		// For prefab mode, use depth-based visual ordering instead of list reordering
+		// This completely avoids any changes to segment indices that could corrupt sequences
+		if (prefabMode)
+		{
+			AdjustPrefabGroupDepth(toTop);
+			return;
+		}
+		
+		// Non-prefab mode: use the original reference-swapping approach
 		int targetLayer = selLayer;
 		if (targetLayer < 0 || targetLayer >= map.layer.Length) return;
 		Layer target = map.layer[targetLayer];
+		
 		// Capture references
 		Seg parentRef = null;
 		if (glueParent.layerIndex == targetLayer && glueParent.segIndex >= 0 && glueParent.segIndex < target.seg.Count)
@@ -2562,14 +2581,17 @@ public class Game1 : Game
 			}
 			else { childRefs.Add(null); }
 		}
+		
 		// Build block in current order (parent first if present)
 		List<Seg> block = new List<Seg>();
 		if (parentRef != null) block.Add(parentRef);
 		for (int i = 0; i < childRefs.Count; i++) { if (childRefs[i] != null && !block.Contains(childRefs[i])) block.Add(childRefs[i]); }
 		block = block.OrderBy(s => target.seg.IndexOf(s)).ToList();
 		if (block.Count == 0) { map.sequenceMgr.UpdateAffectedSegs(); Program.gui.PopulateMapCells(); return; }
+		
 		// Remove block
 		for (int i = target.seg.Count - 1; i >= 0; i--) { if (block.Contains(target.seg[i])) target.seg.RemoveAt(i); }
+		
 		// Insert at desired edge preserving internal order
 		if (toTop)
 		{
@@ -2579,6 +2601,7 @@ public class Game1 : Game
 		{
 			for (int i = block.Count - 1; i >= 0; i--) target.seg.Insert(0, block[i]);
 		}
+		
 		// Remap glue indices strictly by reference
 		if (parentRef != null)
 		{
@@ -2593,7 +2616,73 @@ public class Game1 : Game
 			int ni = target.seg.IndexOf(cref);
 			if (ni >= 0) gluedChildren[i].member = new GroupMemberRef { layerIndex = targetLayer, segIndex = ni };
 		}
+		
 		map.sequenceMgr.UpdateAffectedSegs();
+		Program.gui.PopulateMapCells();
+	}
+	
+	private static void AdjustPrefabGroupDepth(bool toTop)
+	{
+		// Use depth adjustment for visual ordering without changing segment list order
+		// This prevents sequence corruption while still providing front/back functionality
+		
+		if (!glueActive) return;
+		int targetLayer = selLayer;
+		if (targetLayer < 0 || targetLayer >= map.layer.Length) return;
+		Layer target = map.layer[targetLayer];
+		
+		// Get all group member segments
+		List<Seg> groupSegs = new List<Seg>();
+		if (glueParent.layerIndex == targetLayer && glueParent.segIndex >= 0 && glueParent.segIndex < target.seg.Count)
+		{
+			groupSegs.Add(target.seg[glueParent.segIndex]);
+		}
+		for (int i = 0; i < gluedChildren.Count; i++)
+		{
+			var m = gluedChildren[i].member;
+			if (m.layerIndex == targetLayer && m.segIndex >= 0 && m.segIndex < target.seg.Count)
+			{
+				Seg childSeg = target.seg[m.segIndex];
+				if (!groupSegs.Contains(childSeg))
+				{
+					groupSegs.Add(childSeg);
+				}
+			}
+		}
+		
+		if (groupSegs.Count == 0) return;
+		
+		// Find the current depth range of all segments on this layer
+		float minDepth = float.MaxValue;
+		float maxDepth = float.MinValue;
+		foreach (Seg seg in target.seg)
+		{
+			if (seg != null)
+			{
+				minDepth = Math.Min(minDepth, seg.depth);
+				maxDepth = Math.Max(maxDepth, seg.depth);
+			}
+		}
+		
+		// Adjust group depth for visual ordering
+		float depthAdjustment;
+		if (toTop)
+		{
+			// Move to front: set depth slightly higher than current maximum
+			depthAdjustment = maxDepth + 0.001f;
+		}
+		else
+		{
+			// Move to back: set depth slightly lower than current minimum  
+			depthAdjustment = minDepth - 0.001f;
+		}
+		
+		// Apply depth adjustment to all group members
+		foreach (Seg seg in groupSegs)
+		{
+			seg.depth = depthAdjustment;
+		}
+		
 		Program.gui.PopulateMapCells();
 	}
 
@@ -2856,7 +2945,7 @@ public class Game1 : Game
  					SpriteTools.sprite.Draw(tex.texture, drawPos, cell.srcRect, Microsoft.Xna.Framework.Color.White, s.rotation, cell.origin - new Vector2(cell.srcRect.X, cell.srcRect.Y), drawScale, SpriteEffects.None, 1f);
  				}
  				catch { }
- 			}
+			}
 			SpriteTools.End();
 			gd.SetRenderTarget(null);
 			// Save PNG
@@ -2889,118 +2978,118 @@ public class Game1 : Game
 		{
 			// If a glue group is currently active, unglue it before spawning a new prefab
 			if (glueActive) { UnglueAll(); }
- 			if (!File.Exists(jsonPath)) return;
- 			string txt = File.ReadAllText(jsonPath);
- 			// Extract parent block
- 			int pIdx = txt.IndexOf("\"parent\"");
- 			if (pIdx < 0) return;
- 			int pbStart = txt.IndexOf('{', pIdx);
- 			int pbEnd = txt.IndexOf('}', pbStart);
- 			if (pbStart < 0 || pbEnd < 0) return;
- 			string pBlock = txt.Substring(pbStart + 1, pbEnd - pbStart - 1);
- 			string pTex = ExtractString(pBlock, "\"texture\"");
- 			int pCell = ExtractInt(pBlock, "\"idx\"");
- 			float pScaleX = ExtractFloat(pBlock, "\"scaleX\"");
- 			float pScaleY = ExtractFloat(pBlock, "\"scaleY\"");
- 			float pRot = ExtractFloat(pBlock, "\"rotation\"");
- 			int pLayerSaved = ExtractInt(pBlock, "\"layer\"");
- 			int pOrder = ExtractInt(pBlock, "\"order\"");
- 			// Members array
- 			int membersIdx = txt.IndexOf("\"members\"");
- 			if (membersIdx < 0) return;
- 			int arrStart = txt.IndexOf('[', membersIdx);
- 			int arrEnd = txt.IndexOf(']', arrStart);
- 			if (arrStart < 0 || arrEnd < 0) return;
- 			string arr = txt.Substring(arrStart + 1, arrEnd - arrStart - 1);
- 			string[] items = arr.Split(new char[] { '}' }, StringSplitOptions.RemoveEmptyEntries);
- 			Vector2 baseLoc = ScrollManager.scroll; // spawn at current scroll
- 			// Choose parent layer: prefer current selection; else saved layer; else mid layer 15
- 			int parentLayer = (selLayer >= 0 && selLayer < 20) ? selLayer : ((pLayerSaved >= 0 && pLayerSaved < 20) ? pLayerSaved : 15);
- 			// Spawn parent (defer insertion until after we collect all members)
- 			Seg pSeg = new Seg();
- 			pSeg.texture = pTex;
- 			pSeg.idx = pCell;
- 			pSeg.scaling = new Vector2(pScaleX == 0 ? 1f : pScaleX, pScaleY == 0 ? 1f : pScaleY);
- 			pSeg.rotation = pRot;
- 			pSeg.loc = baseLoc;
- 			// Collect per-layer entries (parent + children)
- 			var perLayer = new Dictionary<int, List<PrefabSpawnEntry>>();
- 			if (!perLayer.ContainsKey(parentLayer)) perLayer[parentLayer] = new List<PrefabSpawnEntry>();
+			if (!File.Exists(jsonPath)) return;
+			string txt = File.ReadAllText(jsonPath);
+			// Extract parent block
+			int pIdx = txt.IndexOf("\"parent\"");
+			if (pIdx < 0) return;
+			int pbStart = txt.IndexOf('{', pIdx);
+			int pbEnd = txt.IndexOf('}', pbStart);
+			if (pbStart < 0 || pbEnd < 0) return;
+			string pBlock = txt.Substring(pbStart + 1, pbEnd - pbStart - 1);
+			string pTex = ExtractString(pBlock, "\"texture\"");
+			int pCell = ExtractInt(pBlock, "\"idx\"");
+			float pScaleX = ExtractFloat(pBlock, "\"scaleX\"");
+			float pScaleY = ExtractFloat(pBlock, "\"scaleY\"");
+			float pRot = ExtractFloat(pBlock, "\"rotation\"");
+			int pLayerSaved = ExtractInt(pBlock, "\"layer\"");
+			int pOrder = ExtractInt(pBlock, "\"order\"");
+			// Members array
+			int membersIdx = txt.IndexOf("\"members\"");
+			if (membersIdx < 0) return;
+			int arrStart = txt.IndexOf('[', membersIdx);
+			int arrEnd = txt.IndexOf(']', arrStart);
+			if (arrStart < 0 || arrEnd < 0) return;
+			string arr = txt.Substring(arrStart + 1, arrEnd - arrStart - 1);
+			string[] items = arr.Split(new char[] { '}' }, StringSplitOptions.RemoveEmptyEntries);
+			Vector2 baseLoc = ScrollManager.scroll; // spawn at current scroll
+			// Choose parent layer: prefer current selection; else saved layer; else mid layer 15
+			int parentLayer = (selLayer >= 0 && selLayer < 20) ? selLayer : ((pLayerSaved >= 0 && pLayerSaved < 20) ? pLayerSaved : 15);
+			// Spawn parent (defer insertion until after we collect all members)
+			Seg pSeg = new Seg();
+			pSeg.texture = pTex;
+			pSeg.idx = pCell;
+			pSeg.scaling = new Vector2(pScaleX == 0 ? 1f : pScaleX, pScaleY == 0 ? 1f : pScaleY);
+			pSeg.rotation = pRot;
+			pSeg.loc = baseLoc;
+			// Collect per-layer entries (parent + children)
+			var perLayer = new Dictionary<int, List<PrefabSpawnEntry>>();
+			if (!perLayer.ContainsKey(parentLayer)) perLayer[parentLayer] = new List<PrefabSpawnEntry>();
  			perLayer[parentLayer].Add(new PrefabSpawnEntry { isParent = true, order = pOrder, savedLayer = pLayerSaved, seg = pSeg, offX = 0f, offY = 0f, rot = 0f, srx = 1f, sry = 1f });
- 			for (int ii = 0; ii < items.Length; ii++)
- 			{
- 				string it = items[ii];
- 				int texIdx = it.IndexOf("\"texture\""); if (texIdx < 0) continue;
- 				string texture = ExtractString(it, "\"texture\"");
- 				int idx = ExtractInt(it, "\"idx\"");
+			for (int ii = 0; ii < items.Length; ii++)
+			{
+				string it = items[ii];
+				int texIdx = it.IndexOf("\"texture\""); if (texIdx < 0) continue;
+				string texture = ExtractString(it, "\"texture\"");
+				int idx = ExtractInt(it, "\"idx\"");
  				int layerIdx = parentLayer;
  				int savedLayer = ExtractInt(it, "\"layer\"");
- 				float offX = ExtractFloat(it, "\"localOffsetX\"");
- 				float offY = ExtractFloat(it, "\"localOffsetY\"");
- 				float rot = ExtractFloat(it, "\"localRotation\"");
- 				float srx = ExtractFloat(it, "\"scaleRatioX\"");
- 				float sry = ExtractFloat(it, "\"scaleRatioY\"");
- 				int ord = ExtractInt(it, "\"order\"");
- 				if (layerIdx < 0 || layerIdx >= map.layer.Length) continue;
- 				Seg seg = new Seg();
- 				seg.texture = texture;
- 				seg.idx = idx;
- 				seg.scaling = new Vector2(Math.Max(0.01f, pSeg.scaling.X * srx), Math.Max(0.01f, pSeg.scaling.Y * sry));
- 				seg.rotation = WrapAngle(pSeg.rotation + rot);
- 				// position from normalized offset
- 				float px = (float)Math.Cos(pSeg.rotation); float py = (float)Math.Sin(pSeg.rotation);
- 				float qx = (float)Math.Cos(pSeg.rotation + 1.57079637f); float qy = (float)Math.Sin(pSeg.rotation + 1.57079637f);
- 				Vector2 worldOffset = new Vector2(offX * pSeg.scaling.X, offY * pSeg.scaling.Y);
- 				Vector2 world = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy);
- 				seg.loc = baseLoc + world;
- 				if (!perLayer.ContainsKey(layerIdx)) perLayer[layerIdx] = new List<PrefabSpawnEntry>();
+				float offX = ExtractFloat(it, "\"localOffsetX\"");
+				float offY = ExtractFloat(it, "\"localOffsetY\"");
+				float rot = ExtractFloat(it, "\"localRotation\"");
+				float srx = ExtractFloat(it, "\"scaleRatioX\"");
+				float sry = ExtractFloat(it, "\"scaleRatioY\"");
+				int ord = ExtractInt(it, "\"order\"");
+				if (layerIdx < 0 || layerIdx >= map.layer.Length) continue;
+				Seg seg = new Seg();
+				seg.texture = texture;
+				seg.idx = idx;
+				seg.scaling = new Vector2(Math.Max(0.01f, pSeg.scaling.X * srx), Math.Max(0.01f, pSeg.scaling.Y * sry));
+				seg.rotation = WrapAngle(pSeg.rotation + rot);
+				// position from normalized offset
+				float px = (float)Math.Cos(pSeg.rotation); float py = (float)Math.Sin(pSeg.rotation);
+				float qx = (float)Math.Cos(pSeg.rotation + 1.57079637f); float qy = (float)Math.Sin(pSeg.rotation + 1.57079637f);
+				Vector2 worldOffset = new Vector2(offX * pSeg.scaling.X, offY * pSeg.scaling.Y);
+				Vector2 world = new Vector2(worldOffset.X * px + worldOffset.Y * qx, worldOffset.X * py + worldOffset.Y * qy);
+				seg.loc = baseLoc + world;
+				if (!perLayer.ContainsKey(layerIdx)) perLayer[layerIdx] = new List<PrefabSpawnEntry>();
  				perLayer[layerIdx].Add(new PrefabSpawnEntry { isParent = false, order = ord, savedLayer = savedLayer, seg = seg, offX = offX, offY = offY, rot = rot, srx = srx, sry = sry });
- 			}
+			}
  			// Insert per-layer by saved sub-layer depth (desc) then intra-layer order (asc), append so later draws on top
- 			foreach (var kv in perLayer)
- 			{
- 				int lidx = kv.Key;
+			foreach (var kv in perLayer)
+			{
+				int lidx = kv.Key;
  				var list = kv.Value
  					.OrderByDescending(e => (e.savedLayer >= 0 && e.savedLayer < map.layer.Length) ? map.layer[e.savedLayer].depth : 0f)
  					.ThenBy(e => e.order)
  					.ToList();
- 				for (int j = 0; j < list.Count; j++)
- 				{
+				for (int j = 0; j < list.Count; j++)
+				{
  					map.layer[lidx].seg.Add(list[j].seg);
- 				}
- 			}
- 			// Resolve parent index and build children refs after insertion
- 			int parentIdx = map.layer[parentLayer].seg.IndexOf(pSeg);
- 			List<GluedChild> newChildren = new List<GluedChild>();
- 			foreach (var kv in perLayer)
- 			{
- 				int lidx = kv.Key;
- 				for (int j = 0; j < kv.Value.Count; j++)
- 				{
- 					var entry = kv.Value[j];
- 					if (entry.isParent) continue;
- 					int newIndex = map.layer[lidx].seg.IndexOf(entry.seg);
- 					newChildren.Add(new GluedChild
- 					{
- 						member = new GroupMemberRef { layerIndex = lidx, segIndex = newIndex },
- 						localOffset = new Vector2(entry.offX, entry.offY),
- 						localRotation = entry.rot,
- 						scaleRatio = new Vector2(entry.srx, entry.sry)
- 					});
- 				}
- 			}
- 			// Activate group
- 			glueActive = true;
- 			glueParent = new GroupMemberRef { layerIndex = parentLayer, segIndex = parentIdx };
- 			gluedChildren.Clear();
- 			gluedChildren.AddRange(newChildren);
- 			parentTransformChanged = true;
- 			RecomputeChildrenFromParent();
- 			map.mapGrid.needsUpdate = true;
- 			needsActorUpdate = true;
- 		}
- 		catch {}
- 	}
+				}
+			}
+			// Resolve parent index and build children refs after insertion
+			int parentIdx = map.layer[parentLayer].seg.IndexOf(pSeg);
+			List<GluedChild> newChildren = new List<GluedChild>();
+			foreach (var kv in perLayer)
+			{
+				int lidx = kv.Key;
+				for (int j = 0; j < kv.Value.Count; j++)
+				{
+					var entry = kv.Value[j];
+					if (entry.isParent) continue;
+					int newIndex = map.layer[lidx].seg.IndexOf(entry.seg);
+					newChildren.Add(new GluedChild
+					{
+						member = new GroupMemberRef { layerIndex = lidx, segIndex = newIndex },
+						localOffset = new Vector2(entry.offX, entry.offY),
+						localRotation = entry.rot,
+						scaleRatio = new Vector2(entry.srx, entry.sry)
+					});
+				}
+			}
+			// Activate group
+			glueActive = true;
+			glueParent = new GroupMemberRef { layerIndex = parentLayer, segIndex = parentIdx };
+			gluedChildren.Clear();
+			gluedChildren.AddRange(newChildren);
+			parentTransformChanged = true;
+			RecomputeChildrenFromParent();
+			map.mapGrid.needsUpdate = true;
+			needsActorUpdate = true;
+		}
+		catch {}
+	}
 
 	private static string ExtractString(string src, string key)
 	{

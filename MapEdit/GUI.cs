@@ -1007,7 +1007,11 @@ public class GUI : Form
 		{
 			return;
 		}
-		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// Only update sequence manager when NOT in prefab mode to avoid corrupting sequences
+		if (!Game1.prefabMode)
+		{
+			Game1.map.sequenceMgr.UpdateAffectedSegs();
+		}
 		if (Game1.selSeg > 0)
 		{
 			SwapSegs(Game1.selSeg - 1, Game1.selSeg);
@@ -1054,7 +1058,11 @@ public class GUI : Form
 				layer.seg[i].CopyFrom(layer.seg[j]);
 				layer.seg[j].CopyFrom(seg);
 			}
-			Game1.map.sequenceMgr.Swap(Game1.selLayer, i, j);
+			// Only call sequence manager swap when NOT in prefab mode to avoid corrupting sequences
+			if (!Game1.prefabMode)
+			{
+				Game1.map.sequenceMgr.Swap(Game1.selLayer, i, j);
+			}
 			if (lstMapCells.Enabled)
 			{
 				string value = lstMapCells.Items[i].ToString();
@@ -1075,7 +1083,11 @@ public class GUI : Form
 		}
 		_ = lstMapCells.Items.Count;
 		int count = Game1.map.layer[Game1.selLayer].seg.Count;
-		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// Only update sequence manager when NOT in prefab mode to avoid corrupting sequences
+		if (!Game1.prefabMode)
+		{
+			Game1.map.sequenceMgr.UpdateAffectedSegs();
+		}
 		if (Game1.selSeg < count - 1)
 		{
 			SwapSegs(Game1.selSeg, Game1.selSeg + 1);
@@ -1341,7 +1353,11 @@ public class GUI : Form
 		{
 			return;
 		}
-		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// Only update sequence manager when NOT in prefab mode to avoid corrupting sequences
+		if (!Game1.prefabMode)
+		{
+			Game1.map.sequenceMgr.UpdateAffectedSegs();
+		}
 		while (Game1.selSeg > 0)
 		{
 			SwapSegs(Game1.selSeg, Game1.selSeg - 1);
@@ -1361,7 +1377,11 @@ public class GUI : Form
 		}
 		_ = lstMapCells.Items.Count;
 		int count = Game1.map.layer[Game1.selLayer].seg.Count;
-		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// Only update sequence manager when NOT in prefab mode to avoid corrupting sequences
+		if (!Game1.prefabMode)
+		{
+			Game1.map.sequenceMgr.UpdateAffectedSegs();
+		}
 		while (Game1.selSeg < count - 1)
 		{
 			SwapSegs(Game1.selSeg, Game1.selSeg + 1);
@@ -2166,7 +2186,11 @@ public class GUI : Form
 		{
 			return;
 		}
-		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// Only update sequence manager when NOT in prefab mode to avoid corrupting sequences
+		if (!Game1.prefabMode)
+		{
+			Game1.map.sequenceMgr.UpdateAffectedSegs();
+		}
 		// In Prefabs mode, move the entire active group to back on this layer
 		if (Game1.prefabMode && Game1.HasActiveGlueGroup())
 		{
@@ -2193,7 +2217,11 @@ public class GUI : Form
 		}
 		_ = lstMapCells.Items.Count;
 		int count = Game1.map.layer[Game1.selLayer].seg.Count;
-		Game1.map.sequenceMgr.UpdateAffectedSegs();
+		// Only update sequence manager when NOT in prefab mode to avoid corrupting sequences
+		if (!Game1.prefabMode)
+		{
+			Game1.map.sequenceMgr.UpdateAffectedSegs();
+		}
 		// In Prefabs mode, move the entire active group to front on this layer
 		if (Game1.prefabMode && Game1.HasActiveGlueGroup())
 		{
